@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F3F1EB" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#15181B" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Weather">
+<title>Weather</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%85%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+<style>
+:root{
+  --bg:#F3F1EB; --card:#FFFFFF; --line:#E2DED3; --line2:#ECE8DE; --ink:#1B1E22; --ink2:#3E4248; --muted:#5B5F66;
+  --slate:#3E5566; --rain:#1F5A8C; --rainBg:#E4ECF4; --sun:#A85A12; --sunBar:#D68A3C; --sunBg:#F1E6D6;
+  --temp:#C9772B; --soft:#F8F6F1; --track:#C9C3B4; --chip:#F3F1EB; --segOn:#FFFFFF;
+  --display:'Space Grotesk','IBM Plex Sans',system-ui,sans-serif;
+  --body:'IBM Plex Sans','Segoe UI',system-ui,-apple-system,sans-serif;
+  --lab:64px; --col:54px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#15181B; --card:#1E2226; --line:#2E3338; --line2:#2A2F34; --ink:#ECEAE4; --ink2:#C9C6BE; --muted:#9EA3A9;
+    --slate:#A9B8C4; --rain:#7DB3E3; --rainBg:#22313F; --sun:#E7A15A; --sunBar:#D68A3C; --sunBg:#3A2E22;
+    --temp:#D68A3C; --soft:#23282D; --track:#4A5057; --chip:#262B30; --segOn:#3A4148;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-variant-numeric:tabular-nums;line-height:1.4;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--rain)}
+:focus-visible{outline:2px solid var(--rain);outline-offset:2px;border-radius:6px}
+h2{margin:0;font-family:var(--display);font-weight:600;font-size:18px}
+.muted{color:var(--muted)}
+.app{max-width:1280px;margin:0 auto;padding:20px 16px 32px;display:flex;flex-direction:column;gap:16px}
+
+/* Header */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.place{display:flex;align-items:center;gap:6px;border:0;background:none;padding:4px 0;font-size:15px;font-weight:600;text-align:left;min-height:44px}
+.place svg{flex-shrink:0}
+.sub{font-size:12px;color:var(--muted)}
+.actions{display:flex;gap:8px}
+.round,.pill{height:44px;border-radius:22px;border:1px solid var(--line);background:var(--card);display:flex;align-items:center;justify-content:center}
+.round{width:44px}
+.pill{padding:0 14px;font-size:14px;font-weight:500}
+.round.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Location form */
+.locform{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.locform[hidden]{display:none}
+.locform label{font-size:13px;color:var(--muted)}
+.locrow{display:flex;gap:8px}
+.locrow input{flex:1;min-width:0;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--bg);font-size:16px}
+.primary{height:44px;border:0;border-radius:10px;padding:0 16px;background:var(--rain);color:#fff;font-weight:600}
+@media (prefers-color-scheme: dark){.primary{color:#0E1A26}}
+.linkbtn{align-self:flex-start;border:0;background:none;color:var(--rain);padding:8px 0;font-size:14px;font-weight:500;display:flex;gap:6px;align-items:center;min-height:44px}
+.msg{margin:0;font-size:14px;color:var(--ink)}
+.msg:empty{display:none}
+
+.status{font-size:15px;color:var(--muted);padding:40px 4px;text-align:center}
+.status:empty{display:none}
+.status .primary{margin-top:14px}
+
+/* Layout */
+main{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;
+  grid-template-areas:"now" "tiles" "wear" "hourly" "days"}
+main[hidden]{display:none}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px}
+.cardhead{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:0 4px 10px}
+.cardhead span{font-size:12px;color:var(--muted)}
+
+/* Now */
+.now{grid-area:now;display:flex;align-items:flex-end;justify-content:space-between;padding:4px 4px 0}
+.nowlab{font-size:13px;display:none}
+.bigt{font-family:var(--display);font-size:88px;line-height:.9;font-weight:600;letter-spacing:-3px}
+.feels{font-size:15px;margin-top:4px}
+.feels b{font-weight:600}
+.nowcond{display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-bottom:4px;text-align:right;max-width:50%}
+.nowcond span{font-size:14px;color:var(--slate)}
+
+/* Tiles */
+.tileswrap{grid-area:tiles;display:flex;flex-direction:column}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.tl{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.tv{font-family:var(--display);font-size:24px;font-weight:600}
+.tv small{font-size:14px;font-weight:500}
+.tv.r{color:var(--rain)} .tv.s{color:var(--sun)}
+.ts{font-size:12px;color:var(--muted)}
+
+/* Hourly */
+.hourly{grid-area:hourly;display:flex;flex-direction:column;min-width:0}
+.hourly .card{overflow:hidden}
+.hscroll{overflow-x:auto;padding:10px 0 6px;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}
+.hgrid{width:max-content;display:flex;flex-direction:column;padding-right:8px}
+.hrow{display:grid;grid-template-columns:var(--lab) repeat(24,var(--col));align-items:center;border-bottom:1px solid var(--line2)}
+.hrow:last-child{border-bottom:0}
+.hrow.end{align-items:end}
+.hlab{position:sticky;left:0;z-index:1;background:var(--card);align-self:stretch;display:flex;align-items:center;padding-left:12px;padding-right:6px;font-size:12px;color:var(--muted);border-right:1px solid var(--line2);line-height:1.3}
+.hc{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0;scroll-snap-align:start}
+.hc.mid{border-left:1px dashed var(--track)}
+.hrow.head .hc{padding:0 0 8px}
+.dmk{font-size:11px;font-weight:600;color:var(--rain);height:14px}
+.ht{font-size:12px;font-weight:600;white-space:nowrap}
+.hv{font-family:var(--display);font-size:18px;font-weight:600}
+.fv{font-size:14px;color:var(--ink2)}
+.wv{display:flex;align-items:center;gap:2px;font-size:14px;font-weight:500}
+.sm{font-size:11px;color:var(--muted)}
+.sv{font-size:13px;font-weight:500;color:var(--sun)}
+.sbar{width:32px;height:4px;border-radius:2px;background:var(--sunBg);position:relative;overflow:hidden}
+.sbar i{position:absolute;left:0;top:0;bottom:0;background:var(--sunBar);border-radius:2px}
+.vbar{width:20px;height:40px;border-radius:4px;background:var(--rainBg);position:relative;overflow:hidden}
+.vbar i{position:absolute;left:0;right:0;bottom:0;background:var(--rain)}
+.rv{font-size:13px;font-weight:500;color:var(--rain)}
+.av{font-size:13px;color:var(--rain)}
+
+/* Wear */
+.wear{grid-area:wear;padding:12px 10px 14px 16px;display:grid;grid-template-columns:minmax(0,1fr);gap:12px;
+  grid-template-areas:"head" "seg" "sum" "list" "chips"}
+.wearhead{grid-area:head;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.wearhead > div{display:flex;align-items:center;gap:10px}
+.shirt{width:36px;height:36px;border-radius:18px;background:var(--chip);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.wearhead h2{font-size:15px;font-family:var(--body)}
+.wearhead .muted{font-size:12px;display:block}
+.switch{width:60px;height:44px;border:0;padding:0;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.track{width:50px;height:30px;border-radius:15px;padding:3px;display:flex;background:var(--track);justify-content:flex-start}
+.switch[aria-checked="true"] .track{background:var(--rain);justify-content:flex-end}
+.knob{width:24px;height:24px;border-radius:12px;background:#fff;display:block}
+.seg{grid-area:seg;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:3px;background:var(--chip);border-radius:12px;margin-right:6px}
+.seg button{height:40px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:14px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--segOn);color:var(--ink)}
+.summary{grid-area:sum;margin:0;font-size:14px;line-height:1.5;padding-right:6px}
+.outfit{grid-area:list;list-style:none;margin:0;padding:0 6px 0 0;display:flex;flex-direction:column}
+.outfit li{display:flex;gap:12px;padding:9px 0;border-top:1px solid var(--line2)}
+.outfit .part{width:60px;flex-shrink:0;font-size:12px;color:var(--muted);padding-top:2px}
+.outfit .item{font-size:14px;font-weight:500}
+.chips{grid-area:chips;display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:4px 10px;border-radius:12px;background:var(--chip);color:var(--ink2)}
+.chip.r{background:var(--rainBg);color:var(--rain)}
+.off{grid-area:sum;margin:0;font-size:13px}
+
+/* Days */
+.days{grid-area:days;display:flex;flex-direction:column}
+.dlist{display:flex;flex-direction:column}
+.dhead{display:none}
+.day{display:grid;grid-template-columns:104px 28px minmax(0,1fr);align-items:center;gap:10px;padding:14px 14px 12px;border-top:1px solid var(--line2)}
+.day:first-child{border-top:0}
+.dname{display:flex;flex-direction:column;gap:1px;min-width:0}
+.dname b{font-size:15px;font-weight:600}
+.dname .long{display:none}
+.dname .c{font-size:12px;color:var(--muted)}
+.dicon{display:flex;justify-content:center}
+.drange{display:flex;align-items:center;gap:8px}
+.drange .lo{font-size:14px;color:var(--muted);width:28px;text-align:right}
+.drange .hi{font-family:var(--display);font-size:17px;font-weight:600;width:32px}
+.rbar{flex:1;height:6px;border-radius:3px;background:var(--line2);position:relative}
+.rbar i{position:absolute;top:0;bottom:0;border-radius:3px;background:var(--temp);min-width:6px}
+.dmeta{grid-column:1 / -1;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.dm{display:flex;flex-direction:column;gap:1px;font-size:13px;font-weight:500;min-width:0}
+.dm .ml{font-size:11px;color:var(--muted);font-weight:400}
+.dm.s .v{color:var(--sun)} .dm.r .v{color:var(--rain)}
+.pbar{display:none}
+
+footer{font-size:12px;color:var(--muted);padding:0 4px;line-height:1.6}
+
+/* Desktop */
+@media (min-width: 960px){
+  :root{--lab:132px;--col:72px}
+  .app{padding:36px 48px 48px;gap:24px}
+  .place{font-size:20px;gap:8px}
+  .sub{font-size:13px}
+  main{grid-template-columns:380px minmax(0,1fr);gap:24px 24px;
+    grid-template-areas:"now hourly" "tiles hourly" "wear wear" "days days"}
+  h2{font-size:20px}
+  .now{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+  .nowlab{display:block}
+  .bigt{font-size:96px}
+  .tileswrap .cardhead{display:none}
+  .tiles{gap:12px}
+  .tile{padding:14px 16px}
+  .tv{font-size:26px}
+  .hourly{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 0 12px;overflow:hidden}
+  .hourly .cardhead{padding:0 24px 12px}
+  .hourly .card{border:0;border-radius:0}
+  .hlab{padding-left:24px;font-size:13px}
+  .hv{font-size:22px} .fv{font-size:16px} .wv{font-size:15px} .sv,.rv,.av{font-size:14px} .sm{font-size:12px} .ht{font-size:13px}
+  .sbar{width:44px} .vbar{width:26px;height:44px}
+  .wear{padding:20px 24px;grid-template-columns:340px minmax(0,1fr);column-gap:32px;row-gap:14px;
+    grid-template-areas:"head list" "seg list" "sum list" "chips list";align-items:start}
+  .wearhead h2{font-size:20px;font-family:var(--display)}
+  .wearhead .muted{font-size:13px}
+  .seg,.summary{margin-right:0;padding-right:0}
+  .outfit{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding:0}
+  .outfit li{flex-direction:column;gap:6px;border:0;background:var(--soft);border-radius:12px;padding:16px;min-height:120px}
+  .outfit .part{width:auto;padding:0}
+  .outfit .item{font-size:15px;line-height:1.4}
+  .off{grid-area:list;padding-top:10px;font-size:14px}
+  .days{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 24px 8px}
+  .days > .card{border:0;border-radius:0}
+  .days .cardhead{padding:0 0 8px}
+  .dhead,.day{display:grid;grid-template-columns:210px 40px minmax(0,1.6fr) 110px 130px 120px 160px;gap:16px;align-items:center}
+  .dhead{padding:8px 0;border-bottom:1px solid var(--line2);font-size:12px;color:var(--muted)}
+  .day{padding:12px 0;border-top:0;border-bottom:1px solid var(--line2)}
+  .day:last-child{border-bottom:0}
+  .dname .short{display:none} .dname .long{display:inline} .dname .c{font-size:13px}
+  .drange{gap:12px} .drange .lo{font-size:15px;width:32px} .drange .hi{font-size:20px;width:38px}
+  .dmeta{display:contents}
+  .dm{font-size:14px;font-weight:400;flex-direction:row;align-items:center;gap:8px}
+  .dm .ml{display:none}
+  .dm.r .v{font-weight:500}
+  .pbar{display:block;width:44px;height:6px;border-radius:3px;background:var(--rainBg);position:relative;overflow:hidden;flex-shrink:0}
+  .pbar i{position:absolute;left:0;top:0;bottom:0;background:var(--rain)}
+}
+@media (prefers-reduced-motion: reduce){.round.spin svg{animation:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div>
+      <button type="button" class="place" id="placeBtn" aria-expanded="false" aria-controls="locForm">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--rain)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>
+        <span id="placeName">Finding your location</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="sub" id="updated"></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="pill" id="unitBtn">°F</button>
+      <button type="button" class="round" id="refreshBtn" aria-label="Refresh forecast">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <form class="locform" id="locForm" hidden novalidate>
+    <p class="msg" id="locMsg" role="alert"></p>
+    <label for="zip">Zip code</label>
+    <div class="locrow">
+      <input id="zip" name="zip" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="20148">
+      <button type="submit" class="primary">Show forecast</button>
+    </div>
+    <button type="button" class="linkbtn" id="geoBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 21 3l-8 18-2-8-8-2z"/></svg>
+      Use my current location
+    </button>
+  </form>
+
+  <div class="status" id="status" role="status" aria-live="polite">Finding your location</div>
+
+  <main id="main" hidden>
+    <section class="now" id="now" aria-label="Current conditions"></section>
+    <section class="tileswrap" aria-labelledby="n6h">
+      <div class="cardhead"><h2 id="n6h">Next 6 hours</h2><span id="n6range"></span></div>
+      <div class="tiles" id="tiles"></div>
+    </section>
+    <section class="hourly" aria-labelledby="hh">
+      <div class="cardhead"><h2 id="hh">Hourly</h2><span>Next 24 hours, scroll for more</span></div>
+      <div class="card"><div class="hscroll" id="hourly" tabindex="0" aria-label="Hourly forecast table, scrolls sideways"></div></div>
+    </section>
+    <section class="card wear" id="wear" aria-label="What to wear"></section>
+    <section class="days" aria-labelledby="dh">
+      <div class="cardhead"><h2 id="dh">7-day forecast</h2><span>Low to high</span></div>
+      <div class="card"><div class="dhead"><span>Day</span><span></span><span>Low to high</span><span>Feels like</span><span id="dhWind">Wind, mph</span><span>Sun and UV</span><span>Rain chance, amount</span></div><div class="dlist" id="days"></div></div>
+    </section>
+  </main>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- Storage (per-browser preferences) ---------- */
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem('wx.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('wx.' + k, JSON.stringify(v)); } catch {} }
+};
+const state = {
+  unit: LS.get('unit', 'F'), aud: LS.get('aud', 'w'), wear: LS.get('wear', true),
+  mode: LS.get('mode', 'geo'), zip: LS.get('zip', ''), loc: null, m: null, loadedAt: 0, busy: false
+};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const NWS = { Accept: 'application/geo+json' };
+
+/* ---------- Networking ---------- */
+async function getJSON(url, { headers = {}, timeout = 12000, tries = 1 } = {}) {
+  let last;
+  for (let i = 0; i < tries; i++) {
+    const ac = new AbortController();
+    const t = setTimeout(() => ac.abort(), timeout);
+    try {
+      const r = await fetch(url, { headers, signal: ac.signal });
+      clearTimeout(t);
+      if (r.ok) return await r.json();
+      last = new Error('HTTP ' + r.status); last.status = r.status;
+      if (r.status < 500) throw last;
+    } catch (e) {
+      clearTimeout(t); last = e;
+      if (e.status && e.status < 500) throw e;
+    }
+    if (i < tries - 1) await new Promise(r => setTimeout(r, 900 * (i + 1)));
+  }
+  throw last;
+}
+
+/* ---------- Time helpers (in the forecast location's time zone) ---------- */
+const fmtCache = {};
+function fmt(tz, opts) { const k = tz + JSON.stringify(opts); return fmtCache[k] || (fmtCache[k] = new Intl.DateTimeFormat('en-US', { timeZone: tz, ...opts })); }
+function tzParts(ms, tz) {
+  const o = {};
+  fmt(tz, { year: 'numeric', month: '2-digit', day: '2-digit', hour: 'numeric', hourCycle: 'h23', weekday: 'short' })
+    .formatToParts(new Date(ms)).forEach(p => o[p.type] = p.value);
+  return { date: `${o.year}-${o.month}-${o.day}`, hour: (+o.hour) % 24, wd: o.weekday };
+}
+const hourLabel = (ms, tz) => fmt(tz, { hour: 'numeric' }).format(new Date(ms));
+const clockLabel = (ms, tz) => fmt(tz, { hour: 'numeric', minute: '2-digit' }).format(new Date(ms));
+
+/* ---------- NWS grid data ---------- */
+function parseValid(vt) {
+  const [s, d] = vt.split('/');
+  const m = (d || 'PT1H').match(/P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/) || [];
+  const hrs = (+(m[1] || 0)) * 24 + (+(m[2] || 0)) + (+(m[3] || 0)) / 60;
+  return { start: Date.parse(s), hrs: Math.max(1, Math.round(hrs)) };
+}
+const toF = u => /degC/.test(u) ? v => v * 9 / 5 + 32 : v => v;
+const toMph = u => /km_h/.test(u) ? v => v / 1.609344 : /m_s/.test(u) ? v => v * 2.236936 : /kt/.test(u) ? v => v * 1.15078 : v => v;
+const toIn = u => /mm/.test(u) ? v => v / 25.4 : v => v;
+const same = () => v => v;
+function expand(series, conv, spread) {
+  const map = new Map();
+  if (!series || !series.values) return map;
+  const c = conv(series.uom || '');
+  for (const v of series.values) {
+    if (v.value == null) continue;
+    const { start, hrs } = parseValid(v.validTime);
+    const h0 = Math.floor(start / 3.6e6);
+    const val = c(v.value);
+    for (let i = 0; i < hrs; i++) map.set(h0 + i, spread ? val / hrs : val);
+  }
+  return map;
+}
+
+/* ---------- UV index (EPA, by zip) ---------- */
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+async function getUV(zip) {
+  const map = new Map();
+  if (!/^\d{5}$/.test(zip || '')) return map;
+  const urls = [
+    `https://data.epa.gov/efservice/getEnvirofactsUVHOURLY/ZIP/${zip}/JSON`,
+    `https://data.epa.gov/dmapservice/getEnvirofactsUVHOURLY/ZIP/${zip}/JSON`
+  ];
+  for (const url of urls) {
+    try {
+      const rows = await getJSON(url, { timeout: 7000 });
+      if (!Array.isArray(rows) || !rows.length) continue;
+      for (const r of rows) {
+        const o = {}; for (const k in r) o[k.toUpperCase()] = r[k];
+        const m = String(o.DATE_TIME || '').match(/([A-Z]{3})\/(\d{1,2})\/(\d{4}) (\d{1,2}) ?(AM|PM)/i);
+        if (!m) continue;
+        const mon = MONTHS.indexOf(m[1].toUpperCase()) + 1;
+        let h = (+m[4]) % 12; if (m[5].toUpperCase() === 'PM') h += 12;
+        map.set(`${m[3]}-${String(mon).padStart(2, '0')}-${m[2].padStart(2, '0')} ${h}`, +o.UV_VALUE);
+      }
+      if (map.size) return map;
+    } catch {}
+  }
+  return map;
+}
+
+/* ---------- Place names ---------- */
+async function reverseName(lat, lon) {
+  try {
+    const r = await getJSON(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&lat=${lat}&lon=${lon}`, { timeout: 7000 });
+    const a = r.address || {};
+    const city = a.city || a.town || a.village || a.hamlet || a.suburb || a.county || '';
+    const st = (a['ISO3166-2-lvl4'] || '').replace('US-', '');
+    const zip = (a.postcode || '').slice(0, 5);
+    if (!city) return null;
+    return { name: st ? `${city}, ${st}` : city, zip: /^\d{5}$/.test(zip) ? zip : '' };
+  } catch { return null; }
+}
+
+/* ---------- Conditions ---------- */
+function kindFor(text, isDay) {
+  const s = (text || '').toLowerCase();
+  if (/thunder|t-storm/.test(s)) return 'storm';
+  if (/snow|sleet|flurr|ice|freezing/.test(s)) return 'snow';
+  if (/rain|shower|drizzle/.test(s)) return 'rain';
+  if (/fog|haze|smoke|mist/.test(s)) return 'fog';
+  if (/mostly sunny|mostly clear|sunny|clear|fair/.test(s)) return isDay ? 'sun' : 'moon';
+  if (/partly/.test(s)) return isDay ? 'partly' : 'partlyNight';
+  if (/cloud|overcast/.test(s)) return 'cloud';
+  return isDay ? 'partly' : 'partlyNight';
+}
+const ICONS = {
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+  partly: '<path d="M8 3v1.5M3.2 5.7l1 1M2 10.5h1.5M12.8 5.7l-1 1"/><path d="M5 10.5a3 3 0 0 1 5.7-1.3"/><path d="M9 20h9a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 9 14a3 3 0 0 0 0 6z"/>',
+  partlyNight: '<path d="M5.5 4a3.5 3.5 0 0 0 4.9 4.6A3.5 3.5 0 1 1 5.5 4z"/><path d="M9 20h9a3.5 3.5 0 0 0 .5-6.96A5 5 0 0 0 9 14a3 3 0 0 0 0 6z"/>',
+  cloud: '<path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 7 18z"/>',
+  rain: '<path d="M7 15h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 8 3.5 3.5 0 0 0 7 15z"/><path d="M9 18l-1 3M13 18l-1 3M17 18l-1 3"/>',
+  storm: '<path d="M7 15h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 8 3.5 3.5 0 0 0 7 15z"/><path d="M12.5 15l-2 3.5h3l-2 3.5"/>',
+  snow: '<path d="M7 15h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 8 3.5 3.5 0 0 0 7 15z"/><path d="M8 19h.01M12 18.5h.01M16 19h.01M10 21.5h.01M14 21.5h.01"/>',
+  fog: '<path d="M4 8h16M3 12h18M5 16h14M8 20h8"/>'
+};
+function icon(kind, size) {
+  const color = /rain|storm|snow/.test(kind) ? 'var(--rain)' : kind === 'sun' ? 'var(--sun)' : 'var(--slate)';
+  const sw = /snow/.test(kind) ? 1.8 : 1.6;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[kind] || ICONS.cloud}</svg>`;
+}
+const DIRS = { N:0, NNE:22.5, NE:45, ENE:67.5, E:90, ESE:112.5, SE:135, SSE:157.5, S:180, SSW:202.5, SW:225, WSW:247.5, W:270, WNW:292.5, NW:315, NNW:337.5 };
+const arrow = dir => `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="transform:rotate(${DIRS[dir] ?? 0}deg)"><path d="M12 4v16M6 14l6 6 6-6"/></svg>`;
+function uvCat(u) { return u <= 2 ? 'low' : u <= 5 ? 'moderate' : u <= 7 ? 'high' : u <= 10 ? 'very high' : 'extreme'; }
+
+/* ---------- Units ---------- */
+const T = f => f == null ? '—' : Math.round(state.unit === 'F' ? f : (f - 32) * 5 / 9) + '°';
+const W = mph => Math.round(state.unit === 'F' ? mph : mph * 1.609344);
+const WU = () => state.unit === 'F' ? 'mph' : 'km/h';
+const R = inch => state.unit === 'F' ? (inch < 0.005 ? '0' : inch.toFixed(2)) : (inch * 25.4 < 0.05 ? '0' : (inch * 25.4).toFixed(1));
+const RU = () => state.unit === 'F' ? 'in' : 'mm';
+
+/* ---------- Build the model from NWS data ---------- */
+function build(P, fc, hr, grid, uv, place, lat, lon) {
+  const tz = P.timeZone;
+  const g = grid.properties;
+  const A = expand(g.apparentTemperature, toF), SKY = expand(g.skyCover, same), GU = expand(g.windGust, toMph),
+        WS = expand(g.windSpeed, toMph), Q = expand(g.quantitativePrecipitation, toIn, true), POP = expand(g.probabilityOfPrecipitation, same);
+
+  const now = Date.now();
+  const periods = hr.properties.periods.filter(p => Date.parse(p.endTime) > now).slice(0, 24);
+  const hours = periods.map(p => {
+    const ms = Date.parse(p.startTime), hk = Math.floor(ms / 3.6e6), tp = tzParts(ms, tz);
+    const temp = p.temperatureUnit === 'C' ? p.temperature * 9 / 5 + 32 : p.temperature;
+    const nums = (p.windSpeed || '').match(/\d+(\.\d+)?/g) || [];
+    const ws = WS.has(hk) ? WS.get(hk) : (nums.length ? Math.max(...nums.map(Number)) : 0);
+    const sky = SKY.get(hk);
+    const uvv = uv.get(`${tp.date} ${tp.hour}`);
+    return {
+      ms, date: tp.date, hour: tp.hour, wd: tp.wd, label: hourLabel(ms, tz),
+      temp, feels: A.has(hk) ? A.get(hk) : temp,
+      ws, gust: Math.max(GU.get(hk) || 0, ws), dir: p.windDirection || '',
+      pop: p.probabilityOfPrecipitation?.value ?? POP.get(hk) ?? 0,
+      qpf: Q.get(hk) || 0,
+      isDay: p.isDaytime, sun: p.isDaytime && sky != null ? Math.round(100 - sky) : null,
+      uv: p.isDaytime && uvv != null ? uvv : null,
+      cond: p.shortForecast, kind: kindFor(p.shortForecast, p.isDaytime)
+    };
+  });
+
+  /* Daily aggregates from the grid */
+  const agg = new Map();
+  const allH = new Set([...A.keys(), ...SKY.keys(), ...Q.keys(), ...GU.keys()]);
+  for (const hk of allH) {
+    const tp = tzParts(hk * 3.6e6, tz);
+    let a = agg.get(tp.date);
+    if (!a) { a = { fmax: null, fmin: null, gust: 0, sky: 0, skyN: 0, q: 0, qN: 0 }; agg.set(tp.date, a); }
+    if (A.has(hk)) { const f = A.get(hk); a.fmax = a.fmax == null ? f : Math.max(a.fmax, f); a.fmin = a.fmin == null ? f : Math.min(a.fmin, f); }
+    if (GU.has(hk)) a.gust = Math.max(a.gust, GU.get(hk));
+    if (SKY.has(hk) && tp.hour >= 8 && tp.hour <= 17) { a.sky += SKY.get(hk); a.skyN++; }
+    if (Q.has(hk)) { a.q += Q.get(hk); a.qN++; }
+  }
+  const todayKey = tzParts(now, tz).date;
+  let uvToday = null;
+  for (const [k, v] of uv) if (k.startsWith(todayKey + ' ')) uvToday = Math.max(uvToday ?? 0, v);
+
+  const byDate = new Map();
+  for (const p of fc.properties.periods) {
+    const d = p.startTime.slice(0, 10), h = +p.startTime.slice(11, 13);
+    if (!p.isDaytime && h < 12) continue; // skip leftover overnight period
+    if (!byDate.has(d)) byDate.set(d, { date: d });
+    const o = byDate.get(d);
+    if (p.isDaytime) o.day = o.day || p; else o.night = o.night || p;
+  }
+  const days = [...byDate.values()].slice(0, 7).map(o => {
+    const a = agg.get(o.date) || {};
+    const p = o.day || o.night;
+    const [y, mo, dd] = o.date.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, mo - 1, dd, 12));
+    const short = o.date === todayKey ? 'Today' : `${fmt('UTC', { weekday: 'short' }).format(dt)} ${dd}`;
+    const long = o.date === todayKey ? 'Today' : fmt('UTC', { weekday: 'long', month: 'short', day: 'numeric' }).format(dt);
+    const f = t => t == null ? null : (p.temperatureUnit === 'C' ? t * 9 / 5 + 32 : t);
+    const windNums = ((o.day || o.night).windSpeed || '').match(/\d+/g) || [];
+    return {
+      short, long, cond: p.shortForecast, kind: kindFor(p.shortForecast, !!o.day),
+      hi: o.day ? f(o.day.temperature) : null, lo: o.night ? f(o.night.temperature) : null,
+      fhi: a.fmax, flo: a.fmin,
+      dir: p.windDirection || '', wind: windNums.map(Number), gust: a.gust || 0,
+      pop: Math.max(o.day?.probabilityOfPrecipitation?.value || 0, o.night?.probabilityOfPrecipitation?.value || 0),
+      q: a.qN ? a.q : null,
+      sun: a.skyN ? Math.round(100 - a.sky / a.skyN) : null,
+      uv: o.date === todayKey ? uvToday : null
+    };
+  });
+
+  return {
+    tz, hours, days, place, lat, lon, office: P.cwa,
+    updated: clockLabel(Date.parse(hr.properties.updateTime || hr.properties.generatedAt || now), tz)
+  };
+}
+
+/* ---------- Next 6 hours summary ---------- */
+function next6(m) {
+  const n = m.hours.slice(0, 6);
+  const feels = n.map(h => h.feels), ws = n.map(h => h.ws);
+  const sunVals = n.filter(h => h.sun != null).map(h => h.sun);
+  const uvVals = n.filter(h => h.uv != null).map(h => h.uv);
+  const dirCount = {}; n.forEach(h => dirCount[h.dir] = (dirCount[h.dir] || 0) + 1);
+  const startIdx = n.findIndex(h => h.pop >= 30);
+  return {
+    n, fmin: Math.min(...feels), fmax: Math.max(...feels),
+    wsMin: Math.min(...ws), wsMax: Math.max(...ws), gust: Math.max(...n.map(h => h.gust)),
+    dir: Object.entries(dirCount).sort((a, b) => b[1] - a[1])[0]?.[0] || '',
+    sun: sunVals.length ? Math.round(sunVals.reduce((s, v) => s + v, 0) / sunVals.length) : null,
+    uv: uvVals.length ? Math.max(...uvVals) : null,
+    pop: Math.max(...n.map(h => h.pop)),
+    start: startIdx, startLabel: startIdx >= 0 ? n[startIdx].label : '',
+    q: n.reduce((s, h) => s + h.qpf, 0)
+  };
+}
+
+/* ---------- What to wear ---------- */
+const WEAR = {
+  top: {
+    freezing: { w: 'Thermal base layer and a warm sweater', m: 'Thermal base layer and a heavy sweater', t: 'Thermal under a hoodie. Layering is non-negotiable' },
+    cold: { w: 'Warm sweater or fleece', m: 'Fleece or wool sweater', t: 'Thick hoodie or fleece, stay cozy' },
+    cool: { w: 'Long-sleeve top or light sweater', m: 'Long-sleeve shirt or light sweater', t: 'Crewneck or hoodie, the classic fit' },
+    mild: { w: 'Long-sleeve tee or light sweater', m: 'Long-sleeve tee or henley', t: 'Oversized long sleeve or your comfiest hoodie, lowkey the move' },
+    warm: { w: 'T-shirt or light blouse', m: 'T-shirt or polo', t: 'Graphic tee, easy' },
+    hot: { w: 'Breathable tank or tee', m: 'Lightweight, breathable tee', t: 'Lightest tee you own. It is hot hot' }
+  },
+  layer: {
+    coat: { w: 'Insulated winter coat', m: 'Insulated winter coat', t: 'Puffer, zipped all the way. No debate' },
+    coatWet: { w: 'Waterproof insulated coat', m: 'Waterproof insulated coat', t: 'Waterproof puffer. Wet and cold is not it' },
+    jacket: { w: 'Warm jacket', m: 'Warm jacket', t: 'Real jacket, not just the hoodie' },
+    jacketWet: { w: 'Waterproof jacket with a hood', m: 'Waterproof jacket with a hood', t: 'Waterproof jacket. Getting soaked is not the vibe' },
+    light: { w: 'Light jacket or denim jacket', m: 'Light jacket or overshirt', t: 'Light jacket or a zip-up' },
+    shell: { w: 'Hooded rain shell or windbreaker', m: 'Hooded rain shell or windbreaker', t: 'Rain shell over the hoodie. Getting soaked is not the vibe' },
+    wind: { w: 'Windbreaker', m: 'Windbreaker', t: 'Windbreaker, the wind is wild today' },
+    packable: { w: 'Packable rain jacket, just in case', m: 'Packable rain jacket, just in case', t: 'Toss a rain jacket in your bag just in case' },
+    none: { w: 'None needed', m: 'None needed', t: 'Skip it, you’re good' }
+  },
+  bottoms: {
+    cold: { w: 'Lined pants, or leggings under jeans', m: 'Lined pants or heavy jeans', t: 'Sweats or jeans, full length only' },
+    mid: { w: 'Jeans or leggings', m: 'Jeans or chinos', t: 'Baggy jeans or joggers' },
+    warm: { w: 'Shorts, a skirt, or a light dress', m: 'Shorts', t: 'Shorts, obviously' }
+  },
+  shoes: {
+    ice: { w: 'Insulated waterproof boots', m: 'Insulated waterproof boots', t: 'Boots with grip. Ice is undefeated' },
+    wet: { w: 'Ankle boots or closed-toe sneakers', m: 'Water-resistant sneakers or boots', t: 'Beaters, not the fresh pair. Puddles are coming' },
+    hot: { w: 'Sandals or breathable sneakers', m: 'Breathable sneakers or sandals', t: 'Slides or sneakers' },
+    base: { w: 'Sneakers or flats', m: 'Sneakers', t: 'Your go-to sneakers' }
+  },
+  extra: {
+    hood: { w: 'Hood over umbrella, too gusty', m: 'Hood over umbrella, too gusty', t: 'Hood up, no umbrella. The wind will fold it, no cap' },
+    umbrella: { w: 'Umbrella', m: 'Umbrella', t: 'Umbrella, even if it’s not the aesthetic' },
+    sunscreen: { w: 'Sunglasses and sunscreen', m: 'Sunglasses and sunscreen', t: 'Sunscreen and shades. A burn is not a flex' },
+    shades: { w: 'Sunglasses', m: 'Sunglasses', t: 'Shades on' },
+    warm: { w: 'Hat and gloves', m: 'Hat and gloves', t: 'Beanie and gloves' },
+    windy: { w: 'Hair tie for the wind', m: 'Ball cap for the wind', t: 'Hat or hair tie, the wind is not playing' },
+    nothing: { w: 'Nothing extra needed', m: 'Nothing extra needed', t: 'Nothing extra, you’re set' }
+  }
+};
+function outfit(s, aud) {
+  const f = s.fmin;
+  const band = f <= 32 ? 'freezing' : f <= 45 ? 'cold' : f <= 58 ? 'cool' : f <= 70 ? 'mild' : f <= 80 ? 'warm' : 'hot';
+  const wet = s.pop >= 40 || s.q >= 0.05;
+  const windy = s.gust >= 20;
+  const layer = band === 'freezing' ? (wet ? 'coatWet' : 'coat')
+    : band === 'cold' ? (wet ? 'jacketWet' : 'jacket')
+    : band === 'cool' ? (wet ? 'shell' : windy ? 'wind' : 'light')
+    : band === 'hot' ? (wet || s.pop >= 30 ? 'packable' : 'none')
+    : wet ? 'shell' : windy ? 'wind' : s.pop >= 30 ? 'packable' : 'none';
+  const bottoms = band === 'freezing' || band === 'cold' ? 'cold' : band === 'warm' || band === 'hot' ? 'warm' : 'mid';
+  const shoes = band === 'freezing' ? 'ice' : wet ? 'wet' : band === 'hot' ? 'hot' : 'base';
+  const ex = [];
+  if (wet) ex.push(windy ? 'hood' : 'umbrella');
+  if (s.uv != null && s.uv >= 6) ex.push('sunscreen'); else if (s.uv != null && s.uv >= 3 && !wet) ex.push('shades');
+  if (band === 'freezing' || (band === 'cold' && f <= 40)) ex.push('warm');
+  else if (windy && !wet) ex.push('windy');
+  if (!ex.length) ex.push('nothing');
+  const L = WEAR;
+  return [
+    ['Top', L.top[band][aud]], ['Layer', L.layer[layer][aud]], ['Bottoms', L.bottoms[bottoms][aud]],
+    ['Shoes', L.shoes[shoes][aud]], ['Extras', ex.slice(0, 2).map(k => L.extra[k][aud]).join('. ')]
+  ];
+}
+function summary(s, aud) {
+  const f = s.fmin;
+  const band = f <= 32 ? 'freezing' : f <= 45 ? 'cold' : f <= 58 ? 'cool' : f <= 70 ? 'mild' : f <= 80 ? 'warm' : 'hot';
+  const wet = s.pop >= 40 || s.q >= 0.05;
+  const rainy = s.start >= 0;
+  const windy = s.gust >= 20;
+  if (aud === 't') {
+    const t = { freezing: 'Freezing fr', cold: 'Cold out', cool: 'Chilly', mild: 'Chill weather', warm: 'Warm and nice', hot: 'Hot hot' }[band];
+    const r = rainy ? (s.start === 0 ? ', and it’s raining' : `, and rain hits around ${s.startLabel}`) : ', no rain';
+    const w = windy ? ', windy' : '';
+    const tip = wet ? 'Layers are the whole fit today, fr.' : band === 'hot' ? 'Dress light and stay hydrated.' : band === 'freezing' || band === 'cold' ? 'Bundle up, no cap.' : 'Easy fit day.';
+    return `${t}${w}${r}. ${tip}`;
+  }
+  const t = { freezing: 'Freezing', cold: 'Cold', cool: 'Cool', mild: 'Mild', warm: 'Warm', hot: 'Hot' }[band];
+  const w = s.gust >= 25 ? ' and gusty' : windy ? ' and breezy' : '';
+  const r = rainy ? (s.start === 0 ? ', with rain now' : `, with showers after ${s.startLabel}`) : ', staying dry';
+  const tip = wet && windy ? 'Wear layers you can zip up, and pick a hood over an umbrella.'
+    : wet ? 'Bring rain gear.' : band === 'freezing' || band === 'cold' ? 'Bundle up.'
+    : band === 'hot' ? 'Dress light and stay in the shade when you can.' : 'Dress in easy layers.';
+  return `${t}${w}${r}. ${tip}`;
+}
+
+/* ---------- Rendering ---------- */
+function render() {
+  const m = state.m; if (!m) return;
+  $('#main').hidden = false;
+  $('#placeName').textContent = m.place.name + (m.place.zip ? ' ' + m.place.zip : '');
+  $('#updated').textContent = `${state.mode === 'geo' ? 'Current location' : 'Zip code'} · NWS updated ${m.updated}`;
+  $('#unitBtn').textContent = state.unit === 'F' ? '°F' : '°C';
+  $('#unitBtn').setAttribute('aria-label', state.unit === 'F' ? 'Showing Fahrenheit. Switch to Celsius' : 'Showing Celsius. Switch to Fahrenheit');
+  $('#dhWind').textContent = 'Wind, ' + WU();
+  const s = next6(m);
+  renderNow(m); renderTiles(m, s); renderHourly(m); renderWear(s); renderDays(m); renderFoot(m);
+}
+
+function renderNow(m) {
+  const h = m.hours[0];
+  $('#now').innerHTML = `
+    <div>
+      <div class="muted nowlab">Now</div>
+      <div class="bigt">${T(h.temp)}</div>
+      <div class="feels">Feels like <b>${T(h.feels)}</b></div>
+    </div>
+    <div class="nowcond">${icon(h.kind, 48)}<span>${esc(h.cond)}</span></div>`;
+}
+
+function renderTiles(m, s) {
+  $('#n6range').textContent = `${s.n[0].label} – ${s.n[s.n.length - 1].label}`;
+  const wsTxt = W(s.wsMin) === W(s.wsMax) ? `${W(s.wsMax)}` : `${W(s.wsMin)}–${W(s.wsMax)}`;
+  const gustTxt = s.gust - s.wsMax >= 3 ? `Gusts to ${W(s.gust)} ${WU()}` : 'No strong gusts';
+  const sunBig = s.sun == null ? `<div class="tv s">Night</div>` : `<div class="tv s">${s.sun}% <small>sun</small></div>`;
+  const sunSub = s.sun == null ? 'The sun is down' : s.uv != null ? `UV peaks at ${s.uv} (${uvCat(s.uv)})` : 'UV index unavailable';
+  const rainSub = s.start === 0 ? 'Likely right now' : s.start > 0 ? `Starting around ${s.startLabel}` : s.pop > 0 ? 'Low chance' : 'Dry';
+  const q = s.q;
+  const qDesc = q < 0.005 ? 'None expected' : q < 0.1 ? 'Total, light showers' : q < 0.5 ? 'Total, steady rain' : 'Total, heavy rain';
+  $('#tiles').innerHTML = `
+    <div class="tile"><div class="tl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--slate)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 8h10a3 3 0 1 0-3-3"/><path d="M3 12h15a3 3 0 1 1-3 3"/><path d="M3 16h7"/></svg>Wind</div>
+      <div class="tv">${wsTxt} <small>${WU()} ${esc(s.dir)}</small></div><div class="ts">${gustTxt}</div></div>
+    <div class="tile"><div class="tl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--sun)" stroke-width="2" stroke-linecap="round" aria-hidden="true">${ICONS.sun}</svg>Sun exposure</div>
+      ${sunBig}<div class="ts">${sunSub}</div></div>
+    <div class="tile"><div class="tl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--rain)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></svg>Rain chance</div>
+      <div class="tv r">${s.pop}%</div><div class="ts">${rainSub}</div></div>
+    <div class="tile"><div class="tl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--rain)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 20h14"/><path d="M7 20v-4M12 20v-8M17 20v-6"/></svg>Rain amount</div>
+      <div class="tv r">${R(q)} <small>${RU()}</small></div><div class="ts">${qDesc}</div></div>`;
+}
+
+function renderHourly(m) {
+  const H = m.hours;
+  const cls = h => 'hc' + (h.hour === 0 && h !== H[0] ? ' mid' : '');
+  const row = (label, cell, extra = '') =>
+    `<div class="hrow ${extra}"><div class="hlab">${label}</div>${H.map(h => `<div class="${cls(h)}">${cell(h)}</div>`).join('')}</div>`;
+  $('#hourly').innerHTML = `<div class="hgrid">` +
+    row('', h => `<span class="dmk">${h === H[0] || h.hour === 0 ? h.wd : ''}</span><span class="ht">${h.label}</span>${icon(h.kind, 22)}`, 'head') +
+    row('Temp', h => `<span class="hv">${T(h.temp)}</span>`) +
+    row('Feels like', h => `<span class="fv">${T(h.feels)}</span>`) +
+    row(`Wind<br>${WU()}`, h => `<span class="wv">${arrow(h.dir)}${W(h.ws)}</span><span class="sm">gust ${W(h.gust)}</span>`) +
+    row('Sun<br>UV', h => `<span class="sv">${h.sun == null ? '—' : h.sun + '%'}</span><span class="sbar"><i style="width:${h.sun || 0}%"></i></span><span class="sm">${!h.isDay ? 'Night' : h.uv == null ? 'UV —' : 'UV ' + h.uv}</span>`) +
+    row('Rain<br>chance', h => `<span class="vbar"><i style="height:${h.pop}%"></i></span><span class="rv">${h.pop}%</span>`, 'end') +
+    row(`Amount<br>${RU()}`, h => `<span class="av">${R(h.qpf)}</span>`) +
+    `</div>`;
+}
+
+function renderWear(s) {
+  const on = state.wear, aud = state.aud;
+  const head = `
+    <div class="wearhead">
+      <div>
+        <div class="shirt"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3 3 6l2 4 2-1v12h10V9l2 1 2-4-5-3a4 4 0 0 1-8 0z"/></svg></div>
+        <div><h2>What to wear</h2><span class="muted">Based on the next 6 hours</span></div>
+      </div>
+      <button type="button" class="switch" role="switch" aria-checked="${on}" aria-label="Show outfit suggestions" data-act="toggle"><span class="track"><span class="knob"></span></span></button>
+    </div>`;
+  if (!on) { $('#wear').innerHTML = head + `<p class="muted off">Turn on for outfit ideas matched to the forecast.</p>`; return; }
+  const seg = [['w', 'Women'], ['m', 'Men'], ['t', 'Teens']]
+    .map(([k, l]) => `<button type="button" aria-pressed="${aud === k}" data-aud="${k}">${l}</button>`).join('');
+  const chips = [`<span class="chip">Feels ${T(s.fmin) === T(s.fmax) ? T(s.fmin) : T(s.fmin) + '–' + T(s.fmax)}</span>`];
+  if (s.gust >= 15) chips.push(`<span class="chip">Gusts ${W(s.gust)} ${WU()}</span>`);
+  chips.push(s.start >= 0 ? `<span class="chip r">${s.start === 0 ? 'Rain now' : 'Rain from ' + s.startLabel}</span>` : `<span class="chip">Dry</span>`);
+  if (s.uv != null && s.uv >= 3) chips.push(`<span class="chip">UV ${s.uv}</span>`);
+  $('#wear').innerHTML = head +
+    `<div class="seg" role="group" aria-label="Outfit style">${seg}</div>
+     <p class="summary">${esc(summary(s, aud))}</p>
+     <ul class="outfit">${outfit(s, aud).map(([p, i]) => `<li><span class="part">${p}</span><span class="item">${esc(i)}</span></li>`).join('')}</ul>
+     <div class="chips">${chips.join('')}</div>`;
+}
+
+function renderDays(m) {
+  const vals = m.days.flatMap(d => [d.hi, d.lo]).filter(v => v != null);
+  const min = Math.min(...vals), max = Math.max(...vals), span = Math.max(1, max - min);
+  $('#days').innerHTML = m.days.map(d => {
+    const lo = d.lo ?? d.hi, hi = d.hi ?? d.lo;
+    const left = ((lo - min) / span) * 100, width = ((hi - lo) / span) * 100;
+    const wind = d.wind.length ? `${esc(d.dir)} ${d.wind.map(W).join('–')}` : esc(d.dir);
+    const gust = d.gust >= 15 && d.gust - Math.max(...d.wind, 0) >= 3 ? `, gust ${W(d.gust)}` : '';
+    const feels = d.fhi == null ? '—' : `${T(d.fhi)} / ${T(d.flo)}`;
+    const sun = d.sun == null ? '—' : `${d.sun}%${d.uv != null ? ' · UV ' + d.uv : ''}`;
+    const rain = `${d.pop}%${d.q != null ? ' · ' + R(d.q) + (state.unit === 'F' ? '″' : ' mm') : ''}`;
+    return `
+    <div class="day">
+      <div class="dname"><b><span class="short">${esc(d.short)}</span><span class="long">${esc(d.long)}</span></b><span class="c">${esc(d.cond)}</span></div>
+      <div class="dicon">${icon(d.kind, 26)}</div>
+      <div class="drange"><span class="lo">${T(d.lo)}</span><div class="rbar"><i style="left:${left}%;width:${width}%"></i></div><span class="hi">${T(d.hi)}</span></div>
+      <div class="dmeta">
+        <div class="dm"><span class="ml">Feels</span><span class="v">${feels}</span></div>
+        <div class="dm"><span class="ml">Wind ${WU()}</span><span class="v">${wind}${gust}</span></div>
+        <div class="dm s"><span class="ml">Sun · UV</span><span class="v">${sun}</span></div>
+        <div class="dm r"><span class="ml">Rain</span><span class="pbar"><i style="width:${d.pop}%"></i></span><span class="v">${rain}</span></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderFoot(m) {
+  $('#foot').innerHTML = `Forecast from the <a href="https://forecast.weather.gov/MapClick.php?lat=${m.lat.toFixed(4)}&lon=${m.lon.toFixed(4)}" target="_blank" rel="noopener">National Weather Service</a> (${esc(m.office)} office). UV index from the EPA. Place names from OpenStreetMap.`;
+}
+
+/* ---------- Status and location form ---------- */
+function setStatus(msg, retry) {
+  const el = $('#status');
+  el.innerHTML = msg ? esc(msg) + (retry ? `<div><button type="button" class="primary" id="retryBtn">Try again</button></div>` : '') : '';
+  if (retry) $('#retryBtn').onclick = refresh;
+}
+function showForm(show, msg) {
+  $('#locForm').hidden = !show;
+  $('#placeBtn').setAttribute('aria-expanded', String(show));
+  $('#locMsg').textContent = msg || '';
+  if (show) { $('#zip').value = state.zip || ''; setTimeout(() => $('#zip').focus(), 50); }
+}
+function busy(on) { state.busy = on; $('#refreshBtn').classList.toggle('spin', on); }
+
+/* ---------- Loading flow ---------- */
+function locate() {
+  showForm(false);
+  if (!state.m) setStatus('Finding your location');
+  if (!('geolocation' in navigator)) return fallback('This browser can’t share your location. Enter a zip code to see your forecast.');
+  busy(true);
+  navigator.geolocation.getCurrentPosition(
+    pos => { state.mode = 'geo'; LS.set('mode', 'geo'); load(pos.coords.latitude, pos.coords.longitude, null); },
+    err => { busy(false); fallback(err.code === 1 ? 'Location access is off. Enter a zip code to see your forecast.' : 'Your location couldn’t be found. Enter a zip code to see your forecast.', err.code === 1); },
+    { enableHighAccuracy: false, timeout: 12000, maximumAge: 600000 }
+  );
+}
+function fallback(msg, denied) {
+  if (state.zip && !state.m) { loadZip(state.zip, denied ? null : msg); return; }
+  setStatus('');
+  showForm(true, msg);
+}
+async function loadZip(zip, note) {
+  showForm(false);
+  if (!state.m) setStatus('Looking up ' + zip);
+  busy(true);
+  let z;
+  try { z = await getJSON('https://api.zippopotam.us/us/' + zip, { timeout: 8000, tries: 2 }); }
+  catch (e) {
+    busy(false); setStatus('');
+    showForm(true, e.status === 404 ? 'That zip code wasn’t found. Check the five digits and try again.' : 'The zip code lookup didn’t respond. Try again in a moment.');
+    return;
+  }
+  const pl = z.places[0];
+  state.zip = zip; LS.set('zip', zip);
+  state.mode = 'zip'; LS.set('mode', 'zip');
+  load(+pl.latitude, +pl.longitude, { name: `${pl['place name']}, ${pl['state abbreviation']}`, zip });
+}
+async function load(lat, lon, known) {
+  state.loc = { lat, lon, known };
+  if (!state.m) setStatus('Loading forecast');
+  busy(true);
+  try {
+    const pts = await getJSON(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`, { headers: NWS, tries: 2 });
+    const P = pts.properties;
+    const [fc, hr, grid, place] = await Promise.all([
+      getJSON(P.forecast, { headers: NWS, tries: 3 }),
+      getJSON(P.forecastHourly, { headers: NWS, tries: 3 }),
+      getJSON(P.forecastGridData, { headers: NWS, tries: 3 }),
+      known ? Promise.resolve(known) : reverseName(lat, lon)
+    ]);
+    const rl = P.relativeLocation?.properties || {};
+    const nm = place || { name: [rl.city, rl.state].filter(Boolean).join(', ') || 'Your location', zip: '' };
+    const uv = await getUV(nm.zip);
+    state.m = build(P, fc, hr, grid, uv, nm, lat, lon);
+    state.loadedAt = Date.now();
+    setStatus(''); showForm(false); render();
+  } catch (e) {
+    if (e.status === 404) {
+      setStatus('');
+      showForm(true, 'The National Weather Service only covers US locations. Enter a US zip code.');
+    } else if (!state.m) {
+      setStatus('The weather service didn’t respond. Check your connection and try again.', true);
+    } else {
+      $('#updated').textContent = 'Couldn’t refresh. Showing the last forecast.';
+    }
+  } finally { busy(false); }
+}
+function refresh() {
+  if (state.busy) return;
+  if (state.mode === 'geo' || !state.loc) locate();
+  else load(state.loc.lat, state.loc.lon, state.loc.known);
+}
+function start() {
+  if (state.mode === 'zip' && state.zip) loadZip(state.zip);
+  else locate();
+}
+
+/* ---------- Events ---------- */
+$('#placeBtn').addEventListener('click', () => showForm($('#locForm').hidden, ''));
+$('#geoBtn').addEventListener('click', () => { state.mode = 'geo'; LS.set('mode', 'geo'); state.m = null; $('#main').hidden = true; locate(); });
+$('#locForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const z = $('#zip').value.trim();
+  if (!/^\d{5}$/.test(z)) { $('#locMsg').textContent = 'Enter a five-digit US zip code.'; return; }
+  loadZip(z);
+});
+$('#refreshBtn').addEventListener('click', refresh);
+$('#unitBtn').addEventListener('click', () => { state.unit = state.unit === 'F' ? 'C' : 'F'; LS.set('unit', state.unit); render(); });
+$('#wear').addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.act === 'toggle') { state.wear = !state.wear; LS.set('wear', state.wear); }
+  else if (t.dataset.aud) { state.aud = t.dataset.aud; LS.set('aud', state.aud); }
+  else return;
+  render();
+  const again = t.dataset.act ? $('#wear [data-act="toggle"]') : $(`#wear [data-aud="${state.aud}"]`);
+  again && again.focus();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state.m && Date.now() - state.loadedAt > 30 * 60 * 1000) refresh();
+});
+
+start();
+})();
+</script>
+</body>
+</html>
