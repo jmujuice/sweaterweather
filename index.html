@@ -300,7 +300,7 @@ async function getJSON(url, { headers = {}, timeout = 12000, tries = 1 } = {}) {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), timeout);
     try {
-      const r = await fetch(url, { headers, signal: ac.signal });
+      const r = await fetch(url, { headers, signal: ac.signal, cache: 'no-store' });
       clearTimeout(t);
       if (r.ok) return await r.json();
       last = new Error('HTTP ' + r.status); last.status = r.status;
@@ -430,6 +430,12 @@ const WU = () => state.unit === 'F' ? 'mph' : 'km/h';
 const R = inch => state.unit === 'F' ? (inch < 0.005 ? '0' : inch.toFixed(2)) : (inch * 25.4 < 0.05 ? '0' : (inch * 25.4).toFixed(1));
 const RU = () => state.unit === 'F' ? 'in' : 'mm';
 
+/* Newest "last updated" time across the three NWS feeds */
+function issuedAt(...docs) {
+  const t = docs.map(d => Date.parse(d?.properties?.updateTime || '')).filter(n => !isNaN(n) && n <= Date.now() + 5 * 60 * 1000);
+  return t.length ? Math.max(...t) : null;
+}
+
 /* ---------- Build the model from NWS data ---------- */
 function build(P, fc, hr, grid, uv, place, lat, lon) {
   const tz = P.timeZone;
@@ -505,7 +511,8 @@ function build(P, fc, hr, grid, uv, place, lat, lon) {
 
   return {
     tz, hours, days, place, lat, lon, office: P.cwa,
-    updated: clockLabel(Date.parse(hr.properties.updateTime || hr.properties.generatedAt || now), tz)
+    updated: clockLabel(issuedAt(fc, hr, grid) || now, tz),
+    checked: clockLabel(now, tz)
   };
 }
 
@@ -622,7 +629,7 @@ function render() {
   const m = state.m; if (!m) return;
   $('#main').hidden = false;
   $('#placeName').textContent = m.place.name + (m.place.zip ? ' ' + m.place.zip : '');
-  $('#updated').textContent = `${state.mode === 'geo' ? 'Current location' : 'Zip code'} · NWS updated ${m.updated}`;
+  $('#updated').textContent = `${state.mode === 'geo' ? 'Current location' : 'Zip code'} · Forecast issued ${m.updated} · Checked ${m.checked}`;
   $('#unitBtn').textContent = state.unit === 'F' ? '°F' : '°C';
   $('#unitBtn').setAttribute('aria-label', state.unit === 'F' ? 'Showing Fahrenheit. Switch to Celsius' : 'Showing Celsius. Switch to Fahrenheit');
   $('#dhWind').textContent = 'Wind, ' + WU();
@@ -785,12 +792,23 @@ async function load(lat, lon, known) {
   try {
     const pts = await getJSON(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`, { headers: NWS, tries: 2 });
     const P = pts.properties;
-    const [fc, hr, grid, place] = await Promise.all([
+    const feeds = () => Promise.all([
       getJSON(P.forecast, { headers: NWS, tries: 3 }),
       getJSON(P.forecastHourly, { headers: NWS, tries: 3 }),
-      getJSON(P.forecastGridData, { headers: NWS, tries: 3 }),
-      known ? Promise.resolve(known) : reverseName(lat, lon)
+      getJSON(P.forecastGridData, { headers: NWS, tries: 3 })
     ]);
+    let [[fc, hr, grid], place] = await Promise.all([feeds(), known ? Promise.resolve(known) : reverseName(lat, lon)]);
+    // The NWS API sometimes serves an older copy of a forecast. If any feed looks
+    // more than 2 hours old, ask again once and keep whichever copy is newer.
+    const age = d => Date.now() - (issuedAt(d) || 0);
+    if ([fc, hr, grid].some(d => age(d) > 2 * 3.6e6)) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const again = await feeds();
+        const newer = (a, b) => (issuedAt(b) || 0) > (issuedAt(a) || 0) ? b : a;
+        fc = newer(fc, again[0]); hr = newer(hr, again[1]); grid = newer(grid, again[2]);
+      } catch {}
+    }
     const rl = P.relativeLocation?.properties || {};
     const nm = place || { name: [rl.city, rl.state].filter(Boolean).join(', ') || 'Your location', zip: '' };
     const uv = await getUV(nm.zip);
