@@ -441,7 +441,8 @@ function build(P, fc, hr, grid, uv, place, lat, lon) {
   const tz = P.timeZone;
   const g = grid.properties;
   const A = expand(g.apparentTemperature, toF), SKY = expand(g.skyCover, same), GU = expand(g.windGust, toMph),
-        WS = expand(g.windSpeed, toMph), Q = expand(g.quantitativePrecipitation, toIn, true), POP = expand(g.probabilityOfPrecipitation, same);
+        WS = expand(g.windSpeed, toMph), Q = expand(g.quantitativePrecipitation, toIn, true), POP = expand(g.probabilityOfPrecipitation, same),
+        DEW = expand(g.dewpoint, toF);
 
   const now = Date.now();
   const periods = hr.properties.periods.filter(p => Date.parse(p.endTime) > now).slice(0, 24);
@@ -460,6 +461,7 @@ function build(P, fc, hr, grid, uv, place, lat, lon) {
       qpf: Q.get(hk) || 0,
       isDay: p.isDaytime, sun: p.isDaytime && sky != null ? Math.round(100 - sky) : null,
       uv: p.isDaytime && uvv != null ? uvv : null,
+      dew: DEW.has(hk) ? DEW.get(hk) : null,
       cond: p.shortForecast, kind: kindFor(p.shortForecast, p.isDaytime)
     };
   });
@@ -536,92 +538,263 @@ function next6(m) {
   };
 }
 
-/* ---------- What to wear ---------- */
-const WEAR = {
-  top: {
-    freezing: { w: 'Thermal base layer and a warm sweater', m: 'Thermal base layer and a heavy sweater', t: 'Thermal under a hoodie. Layering is non-negotiable' },
-    cold: { w: 'Warm sweater or fleece', m: 'Fleece or wool sweater', t: 'Thick hoodie or fleece, stay cozy' },
-    cool: { w: 'Long-sleeve top or light sweater', m: 'Long-sleeve shirt or light sweater', t: 'Crewneck or hoodie, the classic fit' },
-    mild: { w: 'Long-sleeve tee or light sweater', m: 'Long-sleeve tee or henley', t: 'Oversized long sleeve or your comfiest hoodie, lowkey the move' },
-    warm: { w: 'T-shirt or light blouse', m: 'T-shirt or polo', t: 'Graphic tee, easy' },
-    hot: { w: 'Breathable tank or tee', m: 'Lightweight, breathable tee', t: 'Lightest tee you own. It is hot hot' }
+/* ---------- What to wear ----------
+   How it works:
+   1. For each of the next 6 hours, start from the NWS feels-like temperature and adjust it:
+      wind on bare skin in the 50–75°F range (NWS feels-like only counts wind below 50°F),
+      warmth from direct sun, and the extra chill of being rained on.
+   2. Dress for the coldest adjusted hour. That temperature sets a target insulation
+      level in "clo", the unit clothing researchers use (a T-shirt and shorts is about 0.3,
+      a winter coat outfit 2.5 or more).
+   3. Try every combination of base layer, mid layer, jacket and bottoms, keep only the
+      ones that make sense (a jacket that blocks wind when it's gusty, a waterproof one
+      when it's raining), and pick the one closest to the target.
+   4. If the window warms or cools a lot, say which layer to take off or bring along, and when.
+*/
+const GARB = {
+  base: {
+    tank:    { clo: 0.08, w: 'Tank top', m: 'Lightweight tee', t: 'Tank or your lightest tee' },
+    tee:     { clo: 0.15, w: 'T-shirt', m: 'T-shirt', t: 'Tee' },
+    long:    { clo: 0.25, w: 'Long-sleeve top', m: 'Long-sleeve tee or henley', t: 'Long sleeve' },
+    thermal: { clo: 0.32, w: 'Thermal base layer', m: 'Thermal base layer', t: 'Thermal underneath' }
   },
-  layer: {
-    coat: { w: 'Insulated winter coat', m: 'Insulated winter coat', t: 'Puffer, zipped all the way. No debate' },
-    coatWet: { w: 'Waterproof insulated coat', m: 'Waterproof insulated coat', t: 'Waterproof puffer. Wet and cold is not it' },
-    jacket: { w: 'Warm jacket', m: 'Warm jacket', t: 'Real jacket, not just the hoodie' },
-    jacketWet: { w: 'Waterproof jacket with a hood', m: 'Waterproof jacket with a hood', t: 'Waterproof jacket. Getting soaked is not the vibe' },
-    light: { w: 'Light jacket or denim jacket', m: 'Light jacket or overshirt', t: 'Light jacket or a zip-up' },
-    shell: { w: 'Hooded rain shell or windbreaker', m: 'Hooded rain shell or windbreaker', t: 'Rain shell over the hoodie. Getting soaked is not the vibe' },
-    wind: { w: 'Windbreaker', m: 'Windbreaker', t: 'Windbreaker, the wind is wild today' },
-    packable: { w: 'Packable rain jacket, just in case', m: 'Packable rain jacket, just in case', t: 'Toss a rain jacket in your bag just in case' },
-    none: { w: 'None needed', m: 'None needed', t: 'Skip it, you’re good' }
+  mid: {
+    none:   { clo: 0 },
+    light:  { clo: 0.3,  w: 'a light sweater or cardigan', m: 'a light sweater or quarter-zip', t: 'a crewneck', name: { w: 'sweater', m: 'sweater', t: 'crewneck' } },
+    fleece: { clo: 0.4,  w: 'a fleece or hoodie', m: 'a fleece or hoodie', t: 'a hoodie', name: { w: 'fleece', m: 'fleece', t: 'hoodie' } },
+    heavy:  { clo: 0.55, w: 'a warm knit sweater', m: 'a heavy wool sweater', t: 'a thick hoodie or fleece', name: { w: 'sweater', m: 'sweater', t: 'hoodie' } }
+  },
+  outer: {
+    none:      { clo: 0,    wind: false, water: false, w: 'No jacket needed', m: 'No jacket needed', t: 'Skip the jacket' },
+    wind:      { clo: 0.15, wind: true,  water: false, w: 'Windbreaker', m: 'Windbreaker', t: 'Windbreaker, the wind is wild' },
+    shell:     { clo: 0.15, wind: true,  water: true,  w: 'Hooded rain shell', m: 'Hooded rain shell', t: 'Rain shell. Getting soaked is not the vibe' },
+    light:     { clo: 0.3,  wind: false, water: false, w: 'Denim or light jacket', m: 'Light jacket or overshirt', t: 'Light jacket or zip-up' },
+    soft:      { clo: 0.5,  wind: true,  water: false, w: 'Softshell or fleece-lined jacket', m: 'Softshell or fleece-lined jacket', t: 'Warm zip-up jacket' },
+    softWet:   { clo: 0.5,  wind: true,  water: true,  w: 'Waterproof jacket with a warm lining', m: 'Waterproof lined jacket', t: 'Lined rain jacket, stay dry' },
+    puffer:    { clo: 0.8,  wind: true,  water: false, w: 'Puffer or insulated jacket', m: 'Insulated jacket', t: 'Puffer' },
+    pufferWet: { clo: 0.85, wind: true,  water: true,  w: 'Waterproof insulated jacket', m: 'Waterproof insulated jacket', t: 'Waterproof puffer. Wet and cold is not it' },
+    parka:     { clo: 1.15, wind: true,  water: true,  w: 'Winter parka', m: 'Winter parka', t: 'Big parka, no debate' }
   },
   bottoms: {
-    cold: { w: 'Lined pants, or leggings under jeans', m: 'Lined pants or heavy jeans', t: 'Sweats or jeans, full length only' },
-    mid: { w: 'Jeans or leggings', m: 'Jeans or chinos', t: 'Baggy jeans or joggers' },
-    warm: { w: 'Shorts, a skirt, or a light dress', m: 'Shorts', t: 'Shorts, obviously' }
-  },
-  shoes: {
-    ice: { w: 'Insulated waterproof boots', m: 'Insulated waterproof boots', t: 'Boots with grip. Ice is undefeated' },
-    wet: { w: 'Ankle boots or closed-toe sneakers', m: 'Water-resistant sneakers or boots', t: 'Beaters, not the fresh pair. Puddles are coming' },
-    hot: { w: 'Sandals or breathable sneakers', m: 'Breathable sneakers or sandals', t: 'Slides or sneakers' },
-    base: { w: 'Sneakers or flats', m: 'Sneakers', t: 'Your go-to sneakers' }
-  },
-  extra: {
-    hood: { w: 'Hood over umbrella, too gusty', m: 'Hood over umbrella, too gusty', t: 'Hood up, no umbrella. The wind will fold it, no cap' },
-    umbrella: { w: 'Umbrella', m: 'Umbrella', t: 'Umbrella, even if it’s not the aesthetic' },
-    sunscreen: { w: 'Sunglasses and sunscreen', m: 'Sunglasses and sunscreen', t: 'Sunscreen and shades. A burn is not a flex' },
-    shades: { w: 'Sunglasses', m: 'Sunglasses', t: 'Shades on' },
-    warm: { w: 'Hat and gloves', m: 'Hat and gloves', t: 'Beanie and gloves' },
-    windy: { w: 'Hair tie for the wind', m: 'Ball cap for the wind', t: 'Hat or hair tie, the wind is not playing' },
-    nothing: { w: 'Nothing extra needed', m: 'Nothing extra needed', t: 'Nothing extra, you’re set' }
+    shorts:  { clo: 0.08, w: 'Shorts, a skirt, or a sundress', m: 'Shorts', t: 'Shorts' },
+    pants:   { clo: 0.25, w: 'Jeans or trousers', m: 'Jeans or chinos', t: 'Baggy jeans or joggers' },
+    quick:   { clo: 0.23, w: 'Quick-dry pants or leggings (jeans stay wet)', m: 'Quick-dry pants (jeans stay wet)', t: 'Joggers, not jeans. Wet denim is a crime' },
+    layered: { clo: 0.4,  w: 'Jeans with thermal leggings underneath', m: 'Jeans with long underwear underneath', t: 'Jeans or sweats with thermals under' },
+    lined:   { clo: 0.5,  w: 'Lined or insulated pants', m: 'Lined or insulated pants', t: 'Lined pants, full send on warmth' }
   }
 };
-function outfit(s, aud) {
-  const f = s.fmin;
-  const band = f <= 32 ? 'freezing' : f <= 45 ? 'cold' : f <= 58 ? 'cool' : f <= 70 ? 'mild' : f <= 80 ? 'warm' : 'hot';
-  const wet = s.pop >= 40 || s.q >= 0.05;
-  const windy = s.gust >= 20;
-  const layer = band === 'freezing' ? (wet ? 'coatWet' : 'coat')
-    : band === 'cold' ? (wet ? 'jacketWet' : 'jacket')
-    : band === 'cool' ? (wet ? 'shell' : windy ? 'wind' : 'light')
-    : band === 'hot' ? (wet || s.pop >= 30 ? 'packable' : 'none')
-    : wet ? 'shell' : windy ? 'wind' : s.pop >= 30 ? 'packable' : 'none';
-  const bottoms = band === 'freezing' || band === 'cold' ? 'cold' : band === 'warm' || band === 'hot' ? 'warm' : 'mid';
-  const shoes = band === 'freezing' ? 'ice' : wet ? 'wet' : band === 'hot' ? 'hot' : 'base';
-  const ex = [];
-  if (wet) ex.push(windy ? 'hood' : 'umbrella');
-  if (s.uv != null && s.uv >= 6) ex.push('sunscreen'); else if (s.uv != null && s.uv >= 3 && !wet) ex.push('shades');
-  if (band === 'freezing' || (band === 'cold' && f <= 40)) ex.push('warm');
-  else if (windy && !wet) ex.push('windy');
-  if (!ex.length) ex.push('nothing');
-  const L = WEAR;
-  return [
-    ['Top', L.top[band][aud]], ['Layer', L.layer[layer][aud]], ['Bottoms', L.bottoms[bottoms][aud]],
-    ['Shoes', L.shoes[shoes][aud]], ['Extras', ex.slice(0, 2).map(k => L.extra[k][aud]).join('. ')]
-  ];
+const SHOES = {
+  wetWarm: { w: 'Sandals or shoes that can get wet', m: 'Sandals or shoes that can get wet', t: 'Slides, let them get wet' },
+  sandals: { w: 'Sandals or breathable sneakers', m: 'Breathable sneakers or sandals', t: 'Slides or sneakers' },
+  sneakers:{ w: 'Sneakers or flats', m: 'Sneakers', t: 'Your go-to sneakers' },
+  socks:   { w: 'Ankle boots, or sneakers with warm socks', m: 'Boots, or sneakers with warm socks', t: 'Sneakers + thick socks' },
+  waterRes:{ w: 'Water-resistant sneakers or ankle boots', m: 'Water-resistant sneakers or boots', t: 'Beaters, not the fresh pair' },
+  rain:    { w: 'Rain boots', m: 'Waterproof boots', t: 'Rain boots. Puddles are coming' },
+  winter:  { w: 'Insulated waterproof boots', m: 'Insulated waterproof boots', t: 'Boots with grip. Ice is undefeated' }
+};
+const EXTRA = {
+  storm:    { w: 'Plan to be indoors when storms arrive', m: 'Plan to be indoors when storms arrive', t: 'Be inside when the storms hit, fr' },
+  hood:     { w: 'Hood instead of an umbrella, too gusty', m: 'Hood instead of an umbrella, too gusty', t: 'Hood up, no umbrella. The wind will fold it' },
+  umbrella: { w: 'Umbrella', m: 'Umbrella', t: 'Umbrella, even if it’s not the aesthetic' },
+  pack:     { w: 'Packable rain shell for later', m: 'Packable rain shell for later', t: 'Toss a rain jacket in your bag' },
+  sunHat:   { w: 'Sun hat, sunscreen, and sunglasses', m: 'Cap, sunscreen, and sunglasses', t: 'Cap, sunscreen, shades. A burn is not a flex' },
+  sunscreen:{ w: 'Sunscreen and sunglasses', m: 'Sunscreen and sunglasses', t: 'Sunscreen + shades' },
+  shades:   { w: 'Sunglasses', m: 'Sunglasses', t: 'Shades on' },
+  hatGloves:{ w: 'Warm hat and gloves', m: 'Warm hat and gloves', t: 'Beanie and gloves' },
+  scarf:    { w: 'Scarf', m: 'Scarf or neck gaiter', t: 'Scarf or neck gaiter' },
+  windy:    { w: 'Hair tie for the wind', m: 'Ball cap for the wind', t: 'Hat or hair tie, the wind is not playing' },
+  water:    { w: 'Water bottle', m: 'Water bottle', t: 'Water bottle, stay hydrated' },
+  nothing:  { w: 'Nothing extra needed', m: 'Nothing extra needed', t: 'Nothing extra, you’re set' }
+};
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fToC = f => (f - 32) * 5 / 9;
+/* Degree differences (not absolute temps) in the user's unit */
+const Dd = x => Math.round(state.unit === 'F' ? x : x * 5 / 9);
+/* Insulation needed (clo) for walking around at a given effective temperature */
+const targetClo = f => clamp((24 - fToC(f)) / 10.5, 0.3, 4);
+
+function adjustedHours(n) {
+  return n.map(h => {
+    const windAdj = h.temp > 50 && h.temp < 75 ? Math.max(0, h.ws - 8) * 0.3 + Math.max(0, h.gust - 20) * 0.1 : 0;
+    const solar = h.isDay && h.sun != null ? (h.sun / 100) * 6 * (h.uv != null ? Math.min(h.uv, 8) / 8 : 0.6) : 0;
+    const wetChill = h.pop >= 50 && h.qpf >= 0.02 && h.temp < 65 ? 2 : 0;
+    return { h, e: h.feels - windAdj + solar - wetChill, windAdj, solar, wetChill };
+  });
 }
-function summary(s, aud) {
-  const f = s.fmin;
-  const band = f <= 32 ? 'freezing' : f <= 45 ? 'cold' : f <= 58 ? 'cool' : f <= 70 ? 'mild' : f <= 80 ? 'warm' : 'hot';
-  const wet = s.pop >= 40 || s.q >= 0.05;
-  const rainy = s.start >= 0;
-  const windy = s.gust >= 20;
-  if (aud === 't') {
-    const t = { freezing: 'Freezing fr', cold: 'Cold out', cool: 'Chilly', mild: 'Chill weather', warm: 'Warm and nice', hot: 'Hot hot' }[band];
-    const r = rainy ? (s.start === 0 ? ', and it’s raining' : `, and rain hits around ${s.startLabel}`) : ', no rain';
-    const w = windy ? ', windy' : '';
-    const tip = wet ? 'Layers are the whole fit today, fr.' : band === 'hot' ? 'Dress light and stay hydrated.' : band === 'freezing' || band === 'cold' ? 'Bundle up, no cap.' : 'Easy fit day.';
-    return `${t}${w}${r}. ${tip}`;
+
+function pickOutfit(target, need) {
+  let best = null;
+  for (const b in GARB.base) {
+    if (b === 'tank' && !need.tankOK) continue;
+    if (b === 'thermal' && !need.thermalOK) continue;
+    for (const md in GARB.mid) {
+      if (md !== 'none' && need.hot) continue;
+      for (const o in GARB.outer) {
+        const O = GARB.outer[o];
+        if (need.water && !O.water) continue;
+        if (need.wind && !O.wind) continue;
+        if (need.coat && o === 'none') continue;
+        if (o === 'parka' && !need.thermalOK) continue;
+        for (const bt in GARB.bottoms) {
+          if (bt === 'shorts' && !need.shortsOK) continue;
+          if (bt === 'quick' && !need.quick) continue;
+          if (bt === 'pants' && need.quick) continue;
+          if ((bt === 'layered' || bt === 'lined') && !need.thermalOK) continue;
+          const total = 0.1 + need.acc + GARB.base[b].clo + GARB.mid[md].clo + O.clo + GARB.bottoms[bt].clo;
+          const cost = Math.abs(total - target)
+            + (md !== 'none' ? 0.04 : 0) + (o !== 'none' ? 0.04 : 0) + (b === 'thermal' ? 0.06 : 0)
+            + (O.water && !need.water ? 0.05 : 0)
+            + ((b === 'tee' || b === 'tank') && O.clo >= 0.5 ? 0.12 : 0);
+          if (!best || cost < best.cost) best = { b, md, o, bt, total, cost };
+        }
+      }
+    }
   }
-  const t = { freezing: 'Freezing', cold: 'Cold', cool: 'Cool', mild: 'Mild', warm: 'Warm', hot: 'Hot' }[band];
-  const w = s.gust >= 25 ? ' and gusty' : windy ? ' and breezy' : '';
-  const r = rainy ? (s.start === 0 ? ', with rain now' : `, with showers after ${s.startLabel}`) : ', staying dry';
-  const tip = wet && windy ? 'Wear layers you can zip up, and pick a hood over an umbrella.'
-    : wet ? 'Bring rain gear.' : band === 'freezing' || band === 'cold' ? 'Bundle up.'
-    : band === 'hot' ? 'Dress light and stay in the shade when you can.' : 'Dress in easy layers.';
-  return `${t}${w}${r}. ${tip}`;
+  return best;
+}
+
+function advise(m, aud) {
+  const n = m.hours.slice(0, 6);
+  const adj = adjustedHours(n);
+  const es = adj.map(a => a.e);
+  const Ec = Math.min(...es), Ew = Math.max(...es);
+  const coldIdx = es.indexOf(Ec), warmIdx = es.indexOf(Ew);
+  const swing = Ew - Ec;
+  const feelsMin = Math.min(...n.map(h => h.feels)), feelsMax = Math.max(...n.map(h => h.feels));
+  const wsMax = Math.max(...n.map(h => h.ws)), gust = Math.max(...n.map(h => h.gust));
+  const windAdj = Math.max(...adj.map(a => a.windAdj));
+  const solar = adj[coldIdx].solar;
+  const uv = Math.max(-1, ...n.map(h => h.uv ?? -1));
+  const dew = Math.max(-99, ...n.map(h => h.dew ?? -99));
+  const sunny = n.some(h => h.isDay && h.sun != null && h.sun >= 50);
+
+  /* Precipitation: type, intensity, timing */
+  const wetHours = n.filter(h => h.pop >= 40);
+  const startIdx = n.findIndex(h => h.pop >= 40);
+  const maxQ = Math.max(...n.map(h => h.qpf)), totQ = n.reduce((s, h) => s + h.qpf, 0);
+  const popMax = Math.max(...n.map(h => h.pop));
+  const snow = n.some(h => h.kind === 'snow' && h.pop >= 30);
+  const storm = n.some(h => h.kind === 'storm' && h.pop >= 30);
+  const ptype = snow ? 'snow' : storm ? 'storms' : n.some(h => /shower/i.test(h.cond)) ? 'showers' : 'rain';
+  const intensity = maxQ >= 0.1 ? 'heavy' : maxQ >= 0.04 ? 'steady' : 'light';
+  const rainSoon = startIdx >= 0 && startIdx <= 2;   // wear the rain layer
+  const rainLater = startIdx > 2;                    // pack it
+  const windy = gust >= 20 || wsMax >= 15;
+  const muggy = dew >= 65 && Ew >= 72;
+
+  const need = {
+    hot: Ec >= 74,
+    tankOK: Ec >= 80,
+    thermalOK: Ec < 40,
+    shortsOK: Ec >= 68 || (Ec >= 64 && Ew >= 74),
+    coat: Ec < 50,
+    water: (rainSoon || (startIdx >= 0 && wetHours.length >= 3)) && Ec < 72,
+    wind: windy && Ec < 66,
+    quick: (intensity !== 'light' && startIdx >= 0 && Ec >= 40 && Ec < 68),
+    acc: (Ec < 40 ? 0.13 : 0) + (Ec < 30 ? 0.08 : 0)
+  };
+  const target = targetClo(Ec);
+  const fit = pickOutfit(target, need);
+
+  /* Layer plan for big swings */
+  let plan = '';
+  const targetW = targetClo(Ew);
+  if (swing >= 7 && fit.total - targetW >= 0.25) {
+    const opts = [];
+    if (fit.md !== 'none') opts.push({ kind: 'mid', clo: GARB.mid[fit.md].clo, name: GARB.mid[fit.md].name[aud] });
+    const O = GARB.outer[fit.o];
+    if (fit.o !== 'none' && !need.water && !(need.wind && windy)) opts.push({ kind: 'outer', clo: O.clo, name: aud === 't' ? 'jacket' : 'jacket' });
+    if (opts.length) {
+      const diff = fit.total - targetW;
+      const pick = opts.sort((a, b) => Math.abs(a.clo - diff) - Math.abs(b.clo - diff))[0];
+      if (coldIdx < warmIdx) {
+        const t = n[adj.findIndex((a, i) => i > coldIdx && a.e >= Ec + swing * 0.6)]?.label || n[warmIdx].label;
+        plan = aud === 't' ? `The ${pick.name} can come off by ${t}.` : `By ${t} it warms to about ${T(Ew)}, so you can take off the ${pick.name}.`;
+      } else {
+        const t = n[coldIdx].label;
+        plan = aud === 't' ? `It gets colder by ${t}, so bring the ${pick.name}.` : `It cools to about ${T(Ec)} by ${t}, so bring the ${pick.name} even if you don’t need it yet.`;
+      }
+    }
+  }
+
+  /* Top text: base + mid */
+  const base = GARB.base[fit.b][aud];
+  const breathable = muggy && (fit.b === 'tee' || fit.b === 'tank') ? (aud === 't' ? ', breathable fabric' : ' in a breathable, moisture-wicking fabric') : '';
+  const top = fit.md === 'none' ? base + breathable
+    : aud === 't' ? `${base} + ${GARB.mid[fit.md].t.replace(/^a /, '')}` : `${base} with ${GARB.mid[fit.md][aud]}`;
+
+  /* Jacket text */
+  let layer = GARB.outer[fit.o][aud];
+  if (fit.o === 'none' && startIdx >= 0 && Ec >= 72) layer = aud === 't' ? 'No jacket, the rain’s warm anyway' : 'No jacket needed, even with the rain';
+
+  /* Shoes */
+  const shoes = snow || Ec < 25 ? 'winter'
+    : startIdx >= 0 && Ec >= 72 ? 'wetWarm'
+    : startIdx >= 0 && intensity === 'heavy' ? 'rain'
+    : startIdx >= 0 && intensity === 'steady' ? 'waterRes'
+    : startIdx >= 0 && Ec < 68 ? 'waterRes'
+    : Ec >= 78 && startIdx < 0 ? 'sandals'
+    : Ec < 45 ? 'socks' : 'sneakers';
+
+  /* Extras, most important first */
+  const ex = [];
+  if (storm) ex.push('storm');
+  if (startIdx >= 0 && !storm && !snow) {
+    if (rainLater && !GARB.outer[fit.o].water) ex.push('pack');
+    else if (gust >= 20) ex.push('hood');
+    else ex.push('umbrella');
+  } else if (popMax >= 25 && popMax < 40 && !GARB.outer[fit.o].water) ex.push('pack');
+  if (uv >= 7 && sunny) ex.push('sunHat');
+  else if (uv >= 5 && sunny) ex.push('sunscreen');
+  else if (sunny && (uv >= 3 || uv < 0)) ex.push('shades');
+  if (Ec < 40) ex.push('hatGloves');
+  if (Ec < 25 || (Ec < 35 && windy)) ex.push('scarf');
+  if (windy && startIdx < 0 && Ec >= 40) ex.push('windy');
+  if (Ew >= 86) ex.push('water');
+  if (!ex.length) ex.push('nothing');
+
+  const items = [
+    ['Top', top],
+    ['Layer', layer],
+    ['Bottoms', GARB.bottoms[fit.bt][aud]],
+    ['Shoes', SHOES[shoes][aud]],
+    ['Extras', ex.slice(0, 3).map(k => EXTRA[k][aud]).join('. ')]
+  ];
+
+  /* Summary */
+  const fr = T(feelsMin) === T(feelsMax) ? T(feelsMin) : `${T(feelsMin).replace('°', '')}–${T(feelsMax)}`;
+  const andJoin = a => a.length <= 1 ? a.join('') : a.length === 2 ? `${a[0]} and ${a[1]}` : `${a.slice(0, -1).join(', ')}, and ${a[a.length - 1]}`;
+  const when = startIdx === 0 ? 'now' : `from ${n[startIdx]?.label}`;
+  let sum;
+  if (aud === 't') {
+    const rain = startIdx >= 0 ? `, ${ptype} ${startIdx === 0 ? 'rn' : 'around ' + n[startIdx].label}` : popMax >= 25 ? ', maybe some rain' : ', no rain';
+    const why = windAdj >= 2 ? ` Wind’s making it feel colder.` : solar >= 2 ? ` Sun’s doing work, feels warmer in it.` : '';
+    sum = `Feels ${fr}${windy ? ', windy' : ''}${muggy ? ', sticky' : ''}${rain}.${why}${plan ? ' ' + plan : ''}`;
+  } else {
+    const parts = [];
+    if (gust >= 25) parts.push(`gusts to ${W(gust)} ${WU()}`); else if (windy) parts.push('a steady breeze');
+    if (muggy) parts.push('sticky humidity');
+    parts.push(startIdx >= 0 ? `${intensity} ${ptype} ${when}` : popMax >= 25 ? `a small chance of ${ptype}` : 'no rain');
+    const reasons = [];
+    if (windAdj >= 2) reasons.push(`the wind takes off about ${Dd(windAdj)}°`);
+    if (solar >= 2) reasons.push(`direct sun adds about ${Dd(solar)}°`);
+    if (adj[coldIdx].wetChill) reasons.push(snow ? 'the snow makes it feel colder' : 'getting wet makes it feel colder');
+    const dressing = `Dressing for ${T(Ec)}${reasons.length ? ': ' + reasons.join(', and ') : ''}.`;
+    sum = `Feels like ${fr}, with ${andJoin(parts)}. ${dressing}${plan ? ' ' + plan : ''}`;
+  }
+
+  /* Chips */
+  const chips = [`<span class="chip">Dressing for ${T(Ec)}</span>`];
+  if (windAdj >= 2) chips.push(`<span class="chip">Wind −${Dd(windAdj)}°</span>`);
+  if (solar >= 2) chips.push(`<span class="chip">Sun +${Dd(solar)}°</span>`);
+  if (gust >= 20) chips.push(`<span class="chip">Gusts ${W(gust)} ${WU()}</span>`);
+  if (startIdx >= 0) chips.push(`<span class="chip r">${intensity[0].toUpperCase() + intensity.slice(1)} ${ptype} ${when}</span>`);
+  else chips.push(`<span class="chip">${popMax >= 25 ? popMax + '% chance of ' + ptype : 'Dry'}</span>`);
+  if (muggy) chips.push(`<span class="chip">Muggy</span>`);
+  if (uv >= 3) chips.push(`<span class="chip">UV ${uv}</span>`);
+
+  return { items, summary: sum, chips };
 }
 
 /* ---------- Rendering ---------- */
@@ -634,7 +807,7 @@ function render() {
   $('#unitBtn').setAttribute('aria-label', state.unit === 'F' ? 'Showing Fahrenheit. Switch to Celsius' : 'Showing Celsius. Switch to Fahrenheit');
   $('#dhWind').textContent = 'Wind, ' + WU();
   const s = next6(m);
-  renderNow(m); renderTiles(m, s); renderHourly(m); renderWear(s); renderDays(m); renderFoot(m);
+  renderNow(m); renderTiles(m, s); renderHourly(m); renderWear(); renderDays(m); renderFoot(m);
 }
 
 function renderNow(m) {
@@ -684,7 +857,7 @@ function renderHourly(m) {
     `</div>`;
 }
 
-function renderWear(s) {
+function renderWear() {
   const on = state.wear, aud = state.aud;
   const head = `
     <div class="wearhead">
@@ -697,15 +870,12 @@ function renderWear(s) {
   if (!on) { $('#wear').innerHTML = head + `<p class="muted off">Turn on for outfit ideas matched to the forecast.</p>`; return; }
   const seg = [['w', 'Women'], ['m', 'Men'], ['t', 'Teens']]
     .map(([k, l]) => `<button type="button" aria-pressed="${aud === k}" data-aud="${k}">${l}</button>`).join('');
-  const chips = [`<span class="chip">Feels ${T(s.fmin) === T(s.fmax) ? T(s.fmin) : T(s.fmin) + '–' + T(s.fmax)}</span>`];
-  if (s.gust >= 15) chips.push(`<span class="chip">Gusts ${W(s.gust)} ${WU()}</span>`);
-  chips.push(s.start >= 0 ? `<span class="chip r">${s.start === 0 ? 'Rain now' : 'Rain from ' + s.startLabel}</span>` : `<span class="chip">Dry</span>`);
-  if (s.uv != null && s.uv >= 3) chips.push(`<span class="chip">UV ${s.uv}</span>`);
+  const a = advise(state.m, aud);
   $('#wear').innerHTML = head +
     `<div class="seg" role="group" aria-label="Outfit style">${seg}</div>
-     <p class="summary">${esc(summary(s, aud))}</p>
-     <ul class="outfit">${outfit(s, aud).map(([p, i]) => `<li><span class="part">${p}</span><span class="item">${esc(i)}</span></li>`).join('')}</ul>
-     <div class="chips">${chips.join('')}</div>`;
+     <p class="summary">${esc(a.summary)}</p>
+     <ul class="outfit">${a.items.map(([p, i]) => `<li><span class="part">${p}</span><span class="item">${esc(i)}</span></li>`).join('')}</ul>
+     <div class="chips">${a.chips.join('')}</div>`;
 }
 
 function renderDays(m) {
