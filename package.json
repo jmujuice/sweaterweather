@@ -1,0 +1,8 @@
+{
+  "name": "sweaterweather",
+  "private": true,
+  "description": "Sweater Weather: NWS forecast with a What Should I Wear? recommendation",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  }
+}
