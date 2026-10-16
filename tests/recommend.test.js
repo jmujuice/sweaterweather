@@ -235,3 +235,46 @@ test('Celsius wording', () => {
   const r = rec({ startHour: 8, temp: [46, 50, 56, 62, 66, 69], ws: 4 }, { unit: 'C' });
   assert.match(r.summary, /Starts around 8° but warms into around 21°/);
 });
+
+/* ---------- 7-day list: outfit for a specific day ---------- */
+test('a future day dresses for 7 AM–9 PM on that date', () => {
+  const hours = makeHours({ n: 72, startHour: 22, temp: 60 });
+  const r = recommend(hours, { window: 'date:2026-10-05' });
+  assert.equal(r.meta.window, 'future');
+  assert.equal(r.meta.from, '7 AM');
+  assert.equal(r.meta.to, '8 PM');
+});
+test('future days say "in the morning", not "this morning"', () => {
+  const temp = Array.from({ length: 72 }, (_, i) => { const h = (10 + i) % 24; return h < 12 ? 46 : 68; });
+  const r = recommend(makeHours({ n: 72, startHour: 10, temp, ws: 4 }), { window: 'date:2026-10-04' });
+  assert.equal(r.label, 'Jacket in the morning, T-shirt later');
+  assert.match(r.summary, /in the afternoon/);
+});
+test('today in the 7-day list uses the rest of the day', () => {
+  const r = recommend(makeHours({ n: 30, startHour: 14, temp: 70 }), { window: 'date:2026-10-03' });
+  assert.equal(r.meta.window, 'now');
+  assert.equal(r.meta.from, '2 PM');
+  assert.equal(r.meta.to, '8 PM');
+});
+test('late at night, today falls back to the remaining hours', () => {
+  const r = recommend(makeHours({ n: 30, startHour: 22, temp: 55 }), { window: 'date:2026-10-03' });
+  assert.equal(r.meta.from, '10 PM');
+  assert.equal(r.meta.to, '11 PM');
+});
+test('a day with rain all afternoon gets rain gear', () => {
+  const pop = Array.from({ length: 72 }, (_, i) => { const h = i % 24; return i >= 24 && h >= 13 && h < 19 ? 80 : 5; });
+  const qpf = pop.map(p => (p > 50 ? 0.05 : 0));
+  const r = recommend(makeHours({ n: 72, startHour: 0, temp: 62, pop, qpf, cond: 'Rain' }), { window: 'date:2026-10-04' });
+  assert.equal(r.label, 'Bring a rain jacket');
+  assert.match(r.summary, /rain becomes likely around 1 PM, clearing by about 7 PM/i);
+});
+test('no hours for that date → null, so the row shows nothing', () => {
+  assert.equal(recommend(makeHours({ n: 6 }), { window: 'date:2026-10-09' }), null);
+});
+test('brief rain late on a future day stays a side note', () => {
+  const pop = Array.from({ length: 72 }, (_, i) => (i >= 24 && i % 24 === 18 ? 80 : 5));
+  const qpf = pop.map(p => (p > 50 ? 0.05 : 0));
+  const r = recommend(makeHours({ n: 72, startHour: 0, temp: 62, pop, qpf, cond: 'Rain' }), { window: 'date:2026-10-04' });
+  assert.notEqual(r.label, 'Bring a rain jacket');
+  assert.ok(has(alertText(r), /Dry through about 6 PM/));
+});

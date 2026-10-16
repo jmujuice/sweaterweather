@@ -88,10 +88,22 @@
 
   /* Which hours to dress for (item 4).
      '2'  → next 2 hours, '6' → next 6 hours,
-     'day' → rest of today until 10 PM, or after 6 PM (and overnight) tomorrow 7 AM–9 PM. */
+     'day' → rest of today until 10 PM, or after 6 PM (and overnight) tomorrow 7 AM–9 PM,
+     'date:YYYY-MM-DD' → that day, 7 AM–9 PM. */
   function selectWindow(hours, key) {
     if (!hours || !hours.length) return { hours: [], kind: 'now' };
     const h0 = hours[0];
+    // A specific day from the 7-day list: 'date:2026-10-17'. Dress for 7 AM–9 PM;
+    // for today, the rest of the day (or the rest of tonight if it's already late).
+    if (typeof key === 'string' && key.startsWith('date:')) {
+      const date = key.slice(5);
+      if (date === h0.date) {
+        let hs = hours.filter(h => h.date === date && h.hour < 21);
+        if (!hs.length) hs = hours.filter(h => h.date === date);
+        return { hours: hs, kind: 'now' };
+      }
+      return { hours: hours.filter(h => h.date === date && h.hour >= 7 && h.hour < 21), kind: 'future' };
+    }
     if (key === '2') return { hours: hours.slice(0, 2), kind: 'now' };
     if (key === 'day') {
       if (h0.hour >= 5 && h0.hour < 18) {

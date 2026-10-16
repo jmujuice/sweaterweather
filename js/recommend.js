@@ -20,7 +20,8 @@
 
   /* ---- Tunable settings ---- */
   const RECOMMEND = {
-    changeMinF: 5,          // a temperature change must be at least this big (°F) to call out
+    changeMinF: 5,
+    dayRainHours: 3,        // in the 7-day list, this many wet hours makes rain the headline          // a temperature change must be at least this big (°F) to call out
     rainHeadlineWithin: 2,  // rain starting within this many hours becomes the headline
     sunscreenUV: 6, hatUV: 8,
     veryHotF: 95,
@@ -82,7 +83,7 @@
     return `the ${r <= 3 ? 'low' : r <= 6 ? 'mid' : 'upper'} ${tens}s`;
   }
   function periodPhrase(hour, kind) {
-    if (kind === 'tomorrow') return hour < 12 ? 'in the morning' : hour < 17 ? 'in the afternoon' : 'in the evening';
+    if (kind !== 'now') return hour < 12 ? 'in the morning' : hour < 17 ? 'in the afternoon' : 'in the evening';
     return hour < 12 ? 'this morning' : hour < 17 ? 'this afternoon' : 'tonight';
   }
 
@@ -151,7 +152,8 @@
 
     /* Rain: wear it if it starts soon, otherwise mention when it arrives */
     const rain = a.rain;
-    const rainWorn = rain.meaningful && rain.startIdx <= R.rainHeadlineWithin;
+    // For a whole future day, rain lasting a few hours is the headline whenever it starts.
+    const rainWorn = rain.meaningful && (rain.startIdx <= R.rainHeadlineWithin || (win.kind === 'future' && rain.wetHours >= R.dayRainHours));
     let later = null;
     if (rain.meaningful && !rainWorn) later = { rain, at: H[rain.startIdx] };
     else if (!rain.meaningful && win.kind === 'now' && H.length < 6) {

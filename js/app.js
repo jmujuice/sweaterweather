@@ -10,7 +10,7 @@ const state = {
   unit: LS.get('unit', 'F'), wear: LS.get('wear', true),
   comfort: LS.get('comfort', 'average'), activity: LS.get('activity', 'walking'),
   voice: LS.get('voice', LS.get('aud', 'w') === 't' ? 'teen' : 'standard'),
-  win: LS.get('win', '6'), winTouched: false, adjOpen: false,
+  win: LS.get('win', '6'), winTouched: false, adjOpen: false, dayWear: LS.get('dayWear', false),
   mode: LS.get('mode', 'geo'), zip: LS.get('zip', ''), loc: null, m: null, loadedAt: 0, busy: false
 };
 
@@ -219,11 +219,12 @@ function build(P, fc, hr, grid, uv, place, lat, lon, obs) {
   const g = grid.properties;
   const A = expand(g.apparentTemperature, toF), SKY = expand(g.skyCover, same), GU = expand(g.windGust, toMph),
         WS = expand(g.windSpeed, toMph), Q = expand(g.quantitativePrecipitation, toIn, true), POP = expand(g.probabilityOfPrecipitation, same),
-        DEW = expand(g.dewpoint, toF), QB = expandBlocks(g.quantitativePrecipitation, toIn);
+        DEW = expand(g.dewpoint, toF), QB = expandBlocks(g.quantitativePrecipitation, toIn),
+        TT = expand(g.temperature, toF);
 
   const now = Date.now();
-  // 48 hours: 24 for the hourly table, the rest so "Tomorrow" outfits work in the evening.
-  const periods = hr.properties.periods.filter(p => Date.parse(p.endTime) > now).slice(0, 48);
+  // The whole hourly feed (about 6½ days): 24 hours for the table, the rest for outfits.
+  const periods = hr.properties.periods.filter(p => Date.parse(p.endTime) > now);
   const hoursAll = periods.map(p => {
     const ms = Date.parse(p.startTime), hk = Math.floor(ms / 3.6e6), tp = tzParts(ms, tz);
     const temp = p.temperatureUnit === 'C' ? p.temperature * 9 / 5 + 32 : p.temperature;
@@ -284,7 +285,7 @@ function build(P, fc, hr, grid, uv, place, lat, lon, obs) {
     const f = t => t == null ? null : (p.temperatureUnit === 'C' ? t * 9 / 5 + 32 : t);
     const windNums = ((o.day || o.night).windSpeed || '').match(/\d+/g) || [];
     return {
-      short, long, cond: p.shortForecast, kind: kindFor(p.shortForecast, !!o.day),
+      date: o.date, short, long, cond: p.shortForecast, kind: kindFor(p.shortForecast, !!o.day),
       hi: o.day ? f(o.day.temperature) : null, lo: o.night ? f(o.night.temperature) : null,
       fhi: a.fmax, flo: a.fmin,
       dir: p.windDirection || '', wind: windNums.map(Number), gust: a.gust || 0,
@@ -295,8 +296,32 @@ function build(P, fc, hr, grid, uv, place, lat, lon, obs) {
     };
   });
 
+  /* Outfit hours for the 7-day list: the hourly feed, then grid data for any later
+     hours (the hourly feed usually stops partway through day 7). */
+  const wearHours = hoursAll.slice();
+  const lastHk = hoursAll.length ? Math.floor(hoursAll[hoursAll.length - 1].ms / 3.6e6) : Math.floor(now / 3.6e6);
+  const lastDate = days.length ? days[days.length - 1].date : null;
+  for (let hk = lastHk + 1; lastDate; hk++) {
+    const ms = hk * 3.6e6, tp = tzParts(ms, tz);
+    if (tp.date > lastDate) break;
+    if (!TT.has(hk) && !A.has(hk)) continue;
+    const temp = TT.has(hk) ? TT.get(hk) : A.get(hk);
+    const isDay = SW.solarZenith(lat, lon, ms + 30 * 60000) < 90;
+    const d = days.find(x => x.date === tp.date);
+    const cond = d ? d.cond : '';
+    const sky = SKY.get(hk), pop = POP.get(hk) ?? 0, qpf = Q.get(hk) || 0, ws = WS.get(hk) || 0;
+    wearHours.push({
+      ms, date: tp.date, hour: tp.hour, wd: tp.wd, label: hourLabel(ms, tz),
+      temp, feels: A.has(hk) ? A.get(hk) : temp, ws, gust: Math.max(GU.get(hk) || 0, ws), dir: '',
+      pop, qpf, qpfBlock: QB.get(hk) || { total: qpf, hrs: 1 },
+      isDay, sky: sky ?? null, sun: isDay && sky != null ? Math.round(100 - sky) : null,
+      uv: isDay ? SW.estimateUV(lat, lon, ms, sky, pop) : null,
+      dew: DEW.has(hk) ? DEW.get(hk) : null, cond, kind: kindFor(cond, isDay)
+    });
+  }
+
   return {
-    tz, hours, hoursAll, days, place, lat, lon, obs, office: P.cwa,
+    tz, hours, hoursAll, wearHours, days, place, lat, lon, obs, office: P.cwa,
     updated: clockLabel(issuedAt(fc, hr, grid) || now, tz),
     checked: clockLabel(now, tz)
   };
@@ -439,7 +464,24 @@ function renderWear() {
     ${panel}`;
 }
 
+function dayOutfit(d) {
+  try {
+    const r = SW.recommend(state.m.wearHours, { window: 'date:' + d.date, comfort: state.comfort, activity: state.activity, voice: state.voice, unit: state.unit });
+    if (!r) return '';
+    const items = r.clothing.map((c, i) => (i ? c.charAt(0).toLowerCase() + c.slice(1) : c)).join(' + ');
+    const alert = r.alerts[0] ? `<span class="dwalert"><span aria-hidden="true">${r.alerts[0].icon}</span> ${esc(r.alerts[0].text)}</span>` : '';
+    return `<div class="dwear">
+      <span class="dwicon" aria-hidden="true">${r.icon}</span>
+      <div class="dwbody"><p class="dwlabel">${esc(r.label)} <span class="dwclothes">${esc(items)}</span></p>
+      <p class="dwsum">${esc(r.summary)}${alert ? ' ' + alert : ''}</p></div>
+    </div>`;
+  } catch { return ''; }
+}
+
 function renderDays(m) {
+  const sw = $('#dayWearBtn');
+  sw.setAttribute('aria-checked', String(state.dayWear));
+  $('#days').classList.toggle('withwear', state.dayWear);
   const vals = m.days.flatMap(d => [d.hi, d.lo]).filter(v => v != null);
   const min = Math.min(...vals), max = Math.max(...vals), span = Math.max(1, max - min);
   $('#days').innerHTML = m.days.map(d => {
@@ -461,6 +503,7 @@ function renderDays(m) {
         <div class="dm s"><span class="ml">Sun · UV</span><span class="v">${sun}</span></div>
         <div class="dm r"><span class="ml">Rain</span><span class="pbar"><i style="width:${d.pop}%"></i></span><span class="v">${rain}</span></div>
       </div>
+      ${state.dayWear ? dayOutfit(d) : ''}
     </div>`;
   }).join('');
 }
@@ -593,7 +636,12 @@ $('#wear').addEventListener('click', e => {
   else if (d.voice) { state.voice = d.voice; LS.set('voice', d.voice); focus = `[data-voice="${d.voice}"]`; }
   else return;
   renderWear();
+  if (state.dayWear && (d.comfort || d.activity || d.voice)) renderDays(state.m);
   const f = $('#wear ' + focus); f && f.focus();
+});
+$('#dayWearBtn').addEventListener('click', () => {
+  state.dayWear = !state.dayWear; LS.set('dayWear', state.dayWear);
+  if (state.m) renderDays(state.m); else $('#dayWearBtn').setAttribute('aria-checked', String(state.dayWear));
 });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state.m && Date.now() - state.loadedAt > 30 * 60 * 1000) refresh();

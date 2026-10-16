@@ -149,6 +149,19 @@ main[hidden]{display:none}
 .dhead{display:none}
 .day{display:grid;grid-template-columns:104px 28px minmax(0,1fr);align-items:center;gap:10px;padding:14px 14px 12px;border-top:1px solid var(--line2)}
 .day:first-child{border-top:0}
+/* 7-day: what to wear */
+.dayshead{align-items:center}
+.dwtoggle{height:44px;border:0;background:none;display:flex;align-items:center;gap:10px;padding:0;font-size:13px;font-weight:500;color:var(--ink2);margin:-8px 0}
+.dwtoggle .track{width:42px;height:26px;border-radius:13px;padding:3px;display:flex;background:var(--track);justify-content:flex-start;box-sizing:border-box}
+.dwtoggle[aria-checked="true"] .track{background:var(--rain);justify-content:flex-end}
+.dwtoggle .knob{width:20px;height:20px;border-radius:10px;background:#fff;display:block}
+.dwear{grid-column:1 / -1;display:flex;gap:10px;align-items:flex-start;background:var(--soft);border-radius:10px;padding:10px 12px}
+.dwicon{font-size:24px;line-height:1.1;flex-shrink:0}
+.dwbody{min-width:0}
+.dwlabel{margin:0;font-size:14px;font-weight:600;line-height:1.35}
+.dwclothes{display:block;font-weight:500;color:var(--ink2);font-size:13px;margin-top:1px}
+.dwsum{margin:4px 0 0;font-size:13px;line-height:1.45;color:var(--ink2)}
+.dwalert{color:var(--muted)}
 .dname{display:flex;flex-direction:column;gap:1px;min-width:0}
 .dname b{font-size:15px;font-weight:600}
 .dname .long{display:none}
@@ -204,6 +217,10 @@ footer{font-size:12px;color:var(--muted);padding:0 4px;line-height:1.6}
   .dhead{padding:8px 0;border-bottom:1px solid var(--line2);font-size:12px;color:var(--muted)}
   .day{padding:12px 0;border-top:0;border-bottom:1px solid var(--line2)}
   .day:last-child{border-bottom:0}
+  .withwear .day{row-gap:10px}
+  .dwear{grid-column:1 / -1;margin:0 0 4px 282px;padding:10px 14px}
+  .dwlabel{font-size:15px} .dwclothes{display:inline;margin-left:8px;font-size:14px} .dwclothes::before{content:'· ';color:var(--muted)}
+  .dwsum{font-size:14px}
   .dname .short{display:none} .dname .long{display:inline} .dname .c{font-size:13px}
   .drange{gap:12px} .drange .lo{font-size:15px;width:32px} .drange .hi{font-size:20px;width:38px}
   .dmeta{display:contents}
@@ -262,7 +279,11 @@ footer{font-size:12px;color:var(--muted);padding:0 4px;line-height:1.6}
     </section>
     <section class="card wear" id="wear" aria-label="What to wear"></section>
     <section class="days" aria-labelledby="dh">
-      <div class="cardhead"><h2 id="dh">7-day forecast</h2><span>Low to high</span></div>
+      <div class="cardhead dayshead"><h2 id="dh">7-day forecast</h2>
+        <button type="button" class="dwtoggle" id="dayWearBtn" role="switch" aria-checked="false" aria-controls="days">
+          <span>What to wear</span><span class="track" aria-hidden="true"><span class="knob"></span></span>
+        </button>
+      </div>
       <div class="card"><div class="dhead"><span>Day</span><span></span><span>Low to high</span><span>Feels like</span><span id="dhWind">Wind, mph</span><span>Sun and UV</span><span>Rain chance, amount</span></div><div class="dlist" id="days"></div></div>
     </section>
   </main>
